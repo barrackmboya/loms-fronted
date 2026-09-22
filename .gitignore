@@ -1,0 +1,9 @@
+# .gitignore
+
+# Ignore specific files
+Loan_OMS_Comprehensive_Schema_Draft.pdf
+README.md
+index.html
+
+# Ignore node_modules directory
+node_modules/
