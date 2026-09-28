@@ -3,7 +3,7 @@ import { api } from '../lib/api'
 import { Empty } from '../components'
 import { money, pct } from '../lib/format'
 
-export default function PolicyPack() {
+export default function PolicyPack({ userProfile }) {
   const [policy, setPolicy] = useState(null)
   const [decisioningMetrics, setDecisioningMetrics] = useState(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
@@ -14,13 +14,36 @@ export default function PolicyPack() {
     const loadData = async () => {
       try {
         setMetricsLoading(true)
-        // Fetch policy pack
-        const policyResult = await api.policy().then(setPolicy).catch(() => setPolicy(false))
 
-        // Fetch decisioning metrics for policy exception rates
-        const metricsResult = await api.decisioningMetrics()
-        setDecisioningMetrics(metricsResult)
-        setMetricsError(null)
+        // Fetch policy pack only if user has access to policy module
+        let policyResult = null
+        if (userProfile?.accessible_modules?.includes('policy') ?? false) {
+          policyResult = await api.policy()
+          setPolicy(policyResult)
+        } else {
+          setPolicy(false) // Indicate access denied
+          setMetricsError('Access denied: You do not have permission to view policy pack')
+        }
+
+        // Fetch decisioning metrics for policy exception rates only if user has access to decisioning module
+        let metricsResult = null
+        if (userProfile?.accessible_modules?.includes('decisioning') ?? false) {
+          metricsResult = await api.decisioningMetrics()
+          setDecisioningMetrics(metricsResult)
+        } else {
+          setDecisioningMetrics(null)
+          // Only set error if we haven't already set an access denied error for policy
+          if (!metricsError) {
+            setMetricsError('Access denied: You do not have permission to view decisioning metrics')
+          }
+        }
+
+        // Clear error if both fetches succeeded or were skipped due to lack of access
+        if ((userProfile?.accessible_modules?.includes('policy') ?? false) ||
+            (userProfile?.accessible_modules?.includes('decisioning') ?? false)) {
+          // If they have access to at least one, clear previous errors unless it was an actual fetch error
+          // We'll rely on the individual error setting above
+        }
       } catch (e) {
         setMetricsError(`Failed to load data: ${e.message}`)
         setPolicy(false)
@@ -31,7 +54,7 @@ export default function PolicyPack() {
     }
 
     loadData()
-  }, [])
+  }, [userProfile, userProfile?.accessible_modules])
 
   if (policy === false) return <Empty>The policy pack endpoint is unreachable.</Empty>
   if (!policy) return <Empty>Loading the policy pack…</Empty>

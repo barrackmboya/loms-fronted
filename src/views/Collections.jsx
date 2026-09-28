@@ -3,7 +3,7 @@ import { Empty, Tag } from '../components'
 import { money } from '../lib/format'
 import { api } from '../lib/api'
 
-export default function Collections({ rows }) {
+export default function Collections({ rows, userProfile }) {
   if (!rows) return <Empty>Loading the queue…</Empty>
   if (!rows.length) return <Empty>No open cases. Cases open at the policy DPD in the policy pack.</Empty>
 
@@ -16,9 +16,15 @@ export default function Collections({ rows }) {
     const loadMetrics = async () => {
       try {
         setMetricsLoading(true)
-        const result = await api.recoveryMetrics()
-        setMetrics(result)
-        setMetricsError(null)
+        // Only fetch if user has access to recovery module
+        if (userProfile?.accessible_modules?.includes('recovery') ?? false) {
+          const result = await api.recoveryMetrics()
+          setMetrics(result)
+          setMetricsError(null)
+        } else {
+          setMetrics(null)
+          setMetricsError('Access denied: You do not have permission to view recovery metrics')
+        }
       } catch (e) {
         setMetricsError(`Failed to load recovery metrics: ${e.message}`)
         setMetrics(null)
@@ -28,7 +34,7 @@ export default function Collections({ rows }) {
     }
 
     loadMetrics()
-  }, [])
+  }, [userProfile, userProfile?.accessible_modules])
 
   return (
     <div className="grid">

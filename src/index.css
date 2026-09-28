@@ -132,3 +132,49 @@ input:disabled { background: #f4f6f4; }
 .metrics-panel div strong {
   color: var(--ink-soft);
 }
+
+
+/* ========== */
+/* Neumorphic Baseline Styles */
+.neu-bg {
+  background-color: #e0e5ec;
+  color: #2d3748;
+}
+
+/* Extruded soft shadow for cards and panels */
+.neu-flat {
+  border-radius: 16px;
+  background: #e0e5ec;
+  box-shadow:  8px 8px 16px #bebebe,
+              -8px -8px 16px #ffffff;
+  transition: all 0.2s ease-in-out;
+}
+
+.neu-flat-sm {
+  border-radius: 12px;
+  background: #e0e5ec;
+  box-shadow:  4px 4px 8px #bebebe,
+              -4px -4px 8px #ffffff;
+}
+
+/* Interactive hover effect */
+.neu-flat:hover {
+  box-shadow:  10px 10px 20px #bebebe,
+              -10px -10px 20px #ffffff;
+}
+
+/* Inset shadow for input fields and metrics containers */
+.neu-pressed {
+  border-radius: 12px;
+  background: #e0e5ec;
+  box-shadow: inset 4px 4px 8px #bebebe,
+              inset -4px -4px 8px #ffffff;
+}
+
+/* Subtle inset pill tags */
+.neu-badge {
+  border-radius: 20px;
+  background: #e0e5ec;
+  box-shadow: inset 2px 2px 4px #bebebe,
+              inset -2px -2px 4px #ffffff;
+}

@@ -19,7 +19,7 @@ const FIELDS = [
   ['device_apps_24h', 'Applications from this device, 24h'], ['tamper_score', 'Worst document tamper score'],
 ]
 
-export default function Originate({ onBooked }) {
+export default function Originate({ onBooked, userProfile }) {
   const [form, setForm] = useState(BLANK)
   const [result, setResult] = useState(null)
   const [appId, setAppId] = useState(null)
@@ -37,9 +37,15 @@ export default function Originate({ onBooked }) {
     const loadMetrics = async () => {
       try {
         setMetricsLoading(true)
-        const result = await api.originationMetrics()
-        setMetrics(result)
-        setMetricsError(null)
+        // Only fetch if user has access to origination module
+        if (userProfile?.accessible_modules?.includes('origination') ?? false) {
+          const result = await api.originationMetrics()
+          setMetrics(result)
+          setMetricsError(null)
+        } else {
+          setMetrics(null)
+          setMetricsError('Access denied: You do not have permission to view origination metrics')
+        }
       } catch (e) {
         setMetricsError(`Failed to load metrics: ${e.message}`)
         setMetrics(null)
@@ -49,9 +55,15 @@ export default function Originate({ onBooked }) {
     }
 
     loadMetrics()
-  }, [])
+  }, [userProfile, userProfile?.accessible_modules])
 
   const decide = async () => {
+    // Check if user has access to origination module
+    if (!(userProfile?.accessible_modules?.includes('origination') ?? false)) {
+      setError('Access denied: You do not have permission to perform origination actions')
+      return
+    }
+
     setBusy(true); setBooked(null); setError(null)
     try {
       const app = await api.createApplication(form)
@@ -61,6 +73,12 @@ export default function Originate({ onBooked }) {
   }
 
   const book = async () => {
+    // Check if user has access to origination module
+    if (!(userProfile?.accessible_modules?.includes('origination') ?? false)) {
+      setError('Access denied: You do not have permission to perform origination actions')
+      return
+    }
+
     setBusy(true)
     try { setBooked(await api.book(appId)); onBooked?.() }
     catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -139,7 +157,8 @@ export default function Originate({ onBooked }) {
               <Empty>Submit a file to see gates G1–G9, the scorecard reason codes, which
                 constraint bound the limit, the priced offer, and how collectable this
                 borrower would be if the loan ever went bad.</Empty>
-            </div>}
+            </div>
+        }
       </div>
     </div>
   )

@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react'
 import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer,
@@ -19,7 +18,7 @@ const STAGE_COLOR = {
   stage_3: '#9e2b2b',
 }
 
-export default function Portfolio({ data }) {
+export default function Portfolio({ data, userProfile }) {
   const [monitoringMetrics, setMonitoringMetrics] = useState(null)
   const [provisioningMetrics, setProvisioningMetrics] = useState(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
@@ -31,9 +30,14 @@ export default function Portfolio({ data }) {
       try {
         setMetricsLoading(true)
 
+        // Only fetch metrics if user has access to the respective modules
         const [monitoringResult, provisioningResult] = await Promise.all([
-          api.monitoringMetrics(),
-          api.provisioningMetrics(),
+          (userProfile?.accessible_modules?.includes('monitoring') ?? false)
+            ? api.monitoringMetrics()
+            : Promise.resolve(null),
+          (userProfile?.accessible_modules?.includes('provisioning') ?? false)
+            ? api.provisioningMetrics()
+            : Promise.resolve(null),
         ])
 
         setMonitoringMetrics(monitoringResult)
@@ -49,7 +53,7 @@ export default function Portfolio({ data }) {
     }
 
     loadMetrics()
-  }, [])
+  }, [userProfile, userProfile?.accessible_modules])
 
   if (!data) return <Empty>Loading the book…</Empty>
   if (!data.accounts) {
@@ -95,7 +99,7 @@ export default function Portfolio({ data }) {
         <Kpi
           label="ECL stock"
           value={money(data.ecl_stock)}
-          note={`coverage ${pct(data.coverage, 2)}`}
+          note={`coverage ${pct(data.ecl, 2)}`}
         />
 
         <Kpi
@@ -349,4 +353,3 @@ export default function Portfolio({ data }) {
     </div>
   )
 }
-

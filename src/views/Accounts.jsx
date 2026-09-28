@@ -3,7 +3,7 @@ import { Empty, Tag } from '../components'
 import { money, pct, stageTone } from '../lib/format'
 import { api } from '../lib/api'
 
-export default function Accounts({ rows }) {
+export default function Accounts({ rows, userProfile }) {
   if (!rows) return <Empty>Loading accounts…</Empty>
   if (!rows.length) return <Empty>Nothing booked yet. Seed a book or approve a file in Originate.</Empty>
 
@@ -16,7 +16,10 @@ export default function Accounts({ rows }) {
     const loadMetrics = async () => {
       try {
         setMetricsLoading(true)
-        const result = await api.partiesMetrics()
+        // Only fetch parties metrics if user has access to the parties module
+        const result = (userProfile?.accessible_modules?.includes('parties') ?? false)
+          ? await api.partiesMetrics()
+          : null
         setMetrics(result)
         setMetricsError(null)
       } catch (e) {
@@ -28,7 +31,7 @@ export default function Accounts({ rows }) {
     }
 
     loadMetrics()
-  }, [])
+  }, [userProfile, userProfile?.accessible_modules])
 
   return (
     <div className="panel">

@@ -1,0 +1,39 @@
+# Node modules
+node_modules
+npm-debug.log
+yarn.lock
+pnpm-lock.yaml
+yarn-error.log
+
+# Build outputs
+dist
+build
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Logs
+logs
+*.log
+
+# Misc
+coverage/
+*.md
+LICENSE

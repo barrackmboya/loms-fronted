@@ -3,7 +3,7 @@ import { Empty, Meter, Tag } from '../components'
 import { bandTone, money } from '../lib/format'
 import { api } from '../lib/api'
 
-export default function Watchlist({ rows }) {
+export default function Watchlist({ rows, userProfile }) {
   if (!rows) return <Empty>Loading the watchlist…</Empty>
   if (!rows.length) return <Empty>No amber or red accounts. Run a month to move the book.</Empty>
 
@@ -16,9 +16,15 @@ export default function Watchlist({ rows }) {
     const loadMetrics = async () => {
       try {
         setMetricsLoading(true)
-        const result = await api.monitoringMetrics()
-        setMetrics(result)
-        setMetricsError(null)
+        // Only fetch if user has access to monitoring module
+        if (userProfile?.accessible_modules?.includes('monitoring') ?? false) {
+          const result = await api.monitoringMetrics()
+          setMetrics(result)
+          setMetricsError(null)
+        } else {
+          setMetrics(null)
+          setMetricsError('Access denied: You do not have permission to view monitoring metrics')
+        }
       } catch (e) {
         setMetricsError(`Failed to load monitoring metrics: ${e.message}`)
         setMetrics(null)
@@ -28,7 +34,7 @@ export default function Watchlist({ rows }) {
     }
 
     loadMetrics()
-  }, [])
+  }, [userProfile, userProfile?.accessible_modules])
 
   return (
     <div className="grid">
