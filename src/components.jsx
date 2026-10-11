@@ -41,4 +41,13 @@ export function Empty({ children }) {
   return <p className="empty">{children}</p>
 }
 
+export function Loader({ label = 'Loading...' }) {
+  return (
+    <div className="loader">
+      <div className="loader-spinner" />
+      <span className="loader-label">{label}</span>
+    </div>
+  )
+}
+
 export { money, pct }

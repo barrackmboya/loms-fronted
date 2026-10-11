@@ -30,7 +30,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { Empty, Kpi, Meter } from '../components'
+import { Empty, Kpi, Meter, Loader } from '../components'
 import { money } from '../lib/format'
 import { api } from '../lib/api'
 
@@ -105,7 +105,7 @@ export default function PortfoliOverview({ userProfile }) {
   }, [hasAccess, month, filters])
 
   if (!hasAccess) return <Empty>You don't have access to the Dashboard module.</Empty>
-  if (loading && !data) return <Empty>Loading Dashboard…</Empty>
+  if (loading && !data) return <Loader label="Loading Dashboard…" />
   if (error) return <p className="error">{error}</p>
   if (!data) return <Empty>No Dashboard data yet for this snapshot.</Empty>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Empty, Tag } from '../components'
+import { Empty, Tag, Loader } from '../components'
 import { money, pct, stageTone } from '../lib/format'
 import { api } from '../lib/api'
 
@@ -39,7 +39,7 @@ export default function Accounts({ rows, userProfile }) {
       <p className="note">Stage and ECL come from the last provisioning run, not from days
         past due alone — a relative PD move can stage an account that is still current.</p>
 
-      {metricsLoading && <p>Loading KYC metrics...</p>}
+      {metricsLoading && <Loader label="Loading KYC metrics..." />}
       {metricsError && <p className="error">{metricsError}</p>}
       {metrics && (
         <div className="metrics-panel">

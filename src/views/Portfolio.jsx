@@ -3,7 +3,7 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { Empty, Kpi, Meter } from '../components'
+import { Empty, Kpi, Meter, Loader } from '../components'
 import { money, pct } from '../lib/format'
 import { api } from '../lib/api'
 
@@ -109,7 +109,7 @@ export default function Portfolio({ data, userProfile }) {
         />
       </div>
 
-      {metricsLoading && <p>Loading portfolio metrics...</p>}
+      {metricsLoading && <Loader label="Loading portfolio metrics..." />}
 
       {metricsError && (
         <p className="error">{metricsError}</p>

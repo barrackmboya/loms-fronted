@@ -21,6 +21,7 @@ const post = (u, body) => {
 }
 export const api = {
   login: (credentials) => post('/api/auth/login/', credentials),
+  refreshToken: (tokenData) => post('/api/auth/token/refresh/', tokenData),
   createApplication: (payload) => post('/api/applications', payload),
   decide: (id) => post(`/api/applications/${id}/decision`),
   book: (id) => post(`/api/applications/${id}/book`),
