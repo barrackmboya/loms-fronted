@@ -1,4 +1,19 @@
-const json = (r) => { if (!r.ok) throw new Error(`${r.status} ${r.statusText}`); return r.json() }
+// Extract the readable message from a DRF error body: {"field": ["msg"]} for
+// validation errors, {"detail": "msg"} for auth/permission/not-found.
+const messageFrom = async (r) => {
+  try {
+    const body = await r.json()
+    if (typeof body.detail === 'string') return body.detail
+    if (body && typeof body === 'object') {
+      return Object.entries(body)
+        .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(' ') : msgs}`)
+        .join('; ')
+    }
+  } catch { /* non-JSON body — fall through */ }
+  return `${r.status} ${r.statusText}`
+}
+
+const json = async (r) => { if (!r.ok) throw new Error(await messageFrom(r)); return r.json() }
 
 const getToken = () => localStorage.getItem('accessToken')
 
@@ -23,6 +38,7 @@ export const api = {
   login: (credentials) => post('/api/auth/login/', credentials),
   refreshToken: (tokenData) => post('/api/auth/token/refresh/', tokenData),
   createApplication: (payload) => post('/api/applications', payload),
+  parties: (search) => get(`/api/parties${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   decide: (id) => post(`/api/applications/${id}/decision`),
   book: (id) => post(`/api/applications/${id}/book`),
   advanceMonth: () => post('/api/servicing/advance'),
