@@ -9,7 +9,24 @@ import { Empty, Meter, Rows, Tag } from '../components'
 // evidence, stated vs verified income, and product/collateral. KYC evidence has
 // no defaults (Phase 4): a NEW applicant states the facts (form opens
 // conservative); a RETURNING applicant is picked by party_id and the backend
-// reuses their stored KYC evidence.
+// reuses their stored KYC evidence. A BUSINESS (ORG) applicant states the sheet-13
+// SME evidence groups instead of the consumer KYC block; the backend scores the
+// business card (hybrid: SME tier drives the offer, the logistic PD stays at G6).
+const SME_BLANK_EVIDENCE = {
+  consent: true,
+  trade_repayment: { months_observed: 12, months_on_time: 7, delays_30d: 2, disputes: 0 },
+  owner_obligations: [{ family: 'Electricity', months_observed: 10, on_time_ratio: 0.92 }],
+  rail: { months_active: 12, reversal_rate: 0.01 },
+  till: { months_observed: 12, inflow_cv: 0.5, seasonal_explained: false },
+  adequacy: { net_inflow_multiple: 2.5 },
+  trajectory: { months_observed: 12, falling_months: 0, stepdown_ratio: 0.0, trend: 'FLAT' },
+  identity: { observed: true, registration: true, tax_current: false, beneficial_owners: false,
+              address: true, sim_match: true, name_consistency_observed: true, name_changes: 1 },
+  market: { chair_confirms: true, association_months: 6 },
+  tenure: { months: 3, autopay_performing: false, autopay_live: false, autopay_failed: false },
+  formalisation: { observed: true, registered: true, tax_current: true, ref_count: 1, ref_quality: 'fair' },
+}
+
 const BLANK = {
   name: '',
   product: 'UNSECURED', collateral_value: 0,
@@ -20,7 +37,8 @@ const BLANK = {
   ip_geo_mismatch: false,
   kyc_status: 'PENDING', face_match: 0, liveness: 0, sanctions_hit: true,
   phone_verified: false, address_tenure_months: 0,
-  party_id: null,
+  party_id: null, party_type: 'IND',
+  sme_evidence: SME_BLANK_EVIDENCE,
 }
 
 const KYC_FIELDS = [
@@ -105,15 +123,24 @@ export default function Originate({ onBooked, userProfile }) {
         setError('Select a customer before running the decision.')
         return
       }
+      const org = form.party_type === 'ORG'
       // The backend takes either party_id (KYC evidence reused) or the full KYC
       // statement — never both. party_id is destructured out so a new-applicant
       // submit never posts the blank form's null (the backend would refuse it).
+      // Segment-consistent payloads: an ORG file carries the SME evidence groups
+      // (and the party_type the backend mirrors onto the Party row), an IND file
+      // carries the consumer KYC block — never both.
       const { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
-              address_tenure_months, name, party_id, ...rest } = form
-      const payload = existing
-        ? { ...rest, party_id }
-        : { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
-            address_tenure_months, name, ...rest }
+              address_tenure_months, name, party_id, party_type, sme_evidence, ...rest } = form
+      const payload = org
+        ? (existing
+            ? { party_id, party_type, sme_evidence, ...rest }
+            : { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
+                address_tenure_months, name, party_type, sme_evidence, ...rest })
+        : (existing
+            ? { ...rest, party_id }
+            : { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
+                address_tenure_months, name, ...rest })
       const app = await api.createApplication(payload)
       setAppId(app.application_id)
       setResult(await api.decide(app.application_id))
@@ -132,15 +159,25 @@ export default function Originate({ onBooked, userProfile }) {
   }
 
   return (
-    <div className="grid cols-2">
+    <div className="grid cols-2 w-[98vw] mx-auto">
       <div className="panel">
-        <h2>New application</h2>
+        <h1>New application</h1>
         <p className="note">Stated and verified income stay separate — the scorecard and
-          affordability engine only read the verified figure. For consumer files the BTS v2
-          scorecard replaces the bureau logistic at the credit gate.</p>
+          affordability engine only read the verified figure. Consumer files run the BTS v2
+          card, business files the SME card — each replaces the bureau logistic at the
+          credit gate (the logistic PD stays at G6 and pricing).</p>
 
         <p className="eyebrow">Applicant</p>
         <div className="grid cols-2">
+          <div>
+            <label htmlFor="party_type">Applicant type</label>
+            <select id="party_type" value={form.party_type}
+              disabled={existing}
+              onChange={(e) => set('party_type', e.target.value)}>
+              <option value="IND">Individual</option>
+              <option value="ORG">Business</option>
+            </select>
+          </div>
           <Bool id="applicant_existing" label="Existing customer" value={existing} onChange={(v) => {
             setExisting(v)
             if (v) { set('party_id', null) } else { setForm((f) => ({ ...f, ...BLANK, party_id: null })) }
@@ -153,19 +190,23 @@ export default function Originate({ onBooked, userProfile }) {
                   <option value="">{parties.length ? 'Select customer…' : 'No customers found'}</option>
                   {parties.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} · KYC {p.kyc_status}{p.sanctions_hit ? ' · SANCTIONS HIT' : ''}
+                      {p.name} · {p.party_type === 'ORG' ? 'Business' : 'Individual'} · KYC {p.kyc_status}{p.sanctions_hit ? ' · SANCTIONS HIT' : ''}
                     </option>
                   ))}
                 </select>
               </div>
             : <div>
-                <label htmlFor="name">Name</label>
+                <label htmlFor="name">{form.party_type === 'ORG' ? 'Business name' : 'Name'}</label>
                 <input id="name" value={form.name} onChange={(e) => set('name', e.target.value)} />
               </div>
           }
         </div>
 
-        {!existing && (
+        {!existing && form.party_type === 'ORG' && (
+          <SmeEvidenceFields form={form} set={set} />
+        )}
+
+        {!existing && form.party_type === 'IND' && (
           <>
             <p className="eyebrow">KYC evidence (new applicant)</p>
             <p className="muted">Stated by the operator — nothing is assumed. The form opens
@@ -191,6 +232,9 @@ export default function Originate({ onBooked, userProfile }) {
               <Bool id="sanctions_hit" label="Sanctions hit" value={form.sanctions_hit} onChange={(v) => set('sanctions_hit', v)} />
             </div>
           </>
+        )}
+        {existing && form.party_type === 'ORG' && (
+          <SmeEvidenceFields form={form} set={set} />
         )}
 
         <p className="eyebrow">Product</p>
@@ -258,10 +302,10 @@ export default function Originate({ onBooked, userProfile }) {
           ? <DecisionRecord res={result} onBook={book} booked={booked} busy={busy} />
           : <div className="soft">
               <h2>Decision record</h2>
-              <Empty>Submit a file to see gates G1–G9, the BTS v2 breakdown for consumer
-                files (bands, domains, poor-twin diagnostic, DIY actions), which constraint
-                bound the limit, the priced offer, and how collectable this borrower would
-                be if the loan ever went bad.</Empty>
+              <Empty>Submit a file to see gates G1–G9, the scorecard breakdown for the
+                applicant's segment (bands, domains, poor-twin diagnostic, DIY actions),
+                which constraint bound the limit, the priced offer, and how collectable
+                this borrower would be if the loan ever went bad.</Empty>
             </div>
         }
       </div>
@@ -277,6 +321,120 @@ function Bool({ id, label, value, onChange }) {
         <option value="true">Yes</option><option value="false">No</option>
       </select>
     </div>
+  )
+}
+
+// One row of the sheet-13 SME evidence editor: updates a single key inside
+// sme_evidence[group] (or an owner-obligation array row) without touching the rest.
+function SmeField({ label, type = 'number', value, onChange }) {
+  if (type === 'bool') return <Bool label={label} value={value} onChange={onChange} />
+  return (
+    <div>
+      <label>{label}</label>
+      <input type={type} step="any" value={value} onChange={(e) => onChange(
+        e.target.type === 'number' ? Number(e.target.value) : e.target.value)} />
+    </div>
+  )
+}
+
+function SmeSelect({ label, value, options, onChange }) {
+  return (
+    <div>
+      <label>{label}</label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
+      </select>
+    </div>
+  )
+}
+
+// Sheet-13 evidence groups, stated by the operator — every key the business
+// card's band ladders read (risk_engine/bts/sme_bands.py). Unstated evidence
+// bands M (0 pts, excluded from available_max) — absence never dilutes.
+function SmeEvidenceFields({ form, set }) {
+  const ev = form.sme_evidence || {}
+  const g = (group, key) => (ev[group] || {})[key]
+  // set inside one evidence group, preserving the other groups (consent sits at
+  // the top level of sme_evidence, beside the groups)
+  const setEv = (patch) => set('sme_evidence', { ...ev, ...patch })
+  const setG = (group, patch) => setEv({ [group]: { ...ev[group], ...patch } })
+  const setObli = (i, key, v) => setEv({
+    owner_obligations: ev.owner_obligations.map((o, j) => (j === i ? { ...o, [key]: v } : o)),
+  })
+  const obli = ev.owner_obligations?.[0] || {}
+  return (
+    <>
+      <p className="eyebrow">Business evidence (SME scorecard)</p>
+      <p className="muted">Stated by the operator — nothing is assumed. The business card
+        bands each group; unobserved groups band M and never dilute what is observed.</p>
+      <div className="grid cols-2">
+        <Bool label="Consent to data use" value={ev.consent ?? true} onChange={(v) => setEv({ consent: v })} />
+        <SmeField label="Trade: months observed" value={g('trade_repayment', 'months_observed') ?? 0}
+          onChange={(v) => setG('trade_repayment', { months_observed: v })} />
+        <SmeField label="Trade: months on time" value={g('trade_repayment', 'months_on_time') ?? 0}
+          onChange={(v) => setG('trade_repayment', { months_on_time: v })} />
+        <SmeField label="Trade: 30-day delays" value={g('trade_repayment', 'delays_30d') ?? 0}
+          onChange={(v) => setG('trade_repayment', { delays_30d: v })} />
+        <SmeField label="Trade: disputes on file" value={g('trade_repayment', 'disputes') ?? 0}
+          onChange={(v) => setG('trade_repayment', { disputes: v })} />
+        <SmeField label="Owner obligation family" type="text" value={obli.family || ''}
+          onChange={(v) => setObli(0, 'family', v)} />
+        <SmeField label="Owner obligation: months" value={obli.months_observed ?? 0}
+          onChange={(v) => setObli(0, 'months_observed', v)} />
+        <SmeField label="Owner obligation: on-time ratio (0–1)" value={obli.on_time_ratio ?? 0}
+          onChange={(v) => setObli(0, 'on_time_ratio', v)} />
+        <SmeField label="Rail: months active" value={g('rail', 'months_active') ?? 0}
+          onChange={(v) => setG('rail', { months_active: v })} />
+        <SmeField label="Rail: reversal rate (0–1)" value={g('rail', 'reversal_rate') ?? 0}
+          onChange={(v) => setG('rail', { reversal_rate: v })} />
+        <SmeField label="Till: months observed" value={g('till', 'months_observed') ?? 0}
+          onChange={(v) => setG('till', { months_observed: v })} />
+        <SmeField label="Till: inflow CV" value={g('till', 'inflow_cv') ?? 0}
+          onChange={(v) => setG('till', { inflow_cv: v })} />
+        <SmeField type="bool" label="Till: seasonal but explained" value={g('till', 'seasonal_explained') ?? false}
+          onChange={(v) => setG('till', { seasonal_explained: v })} />
+        <SmeField label="Adequacy: net inflow × instalment" value={g('adequacy', 'net_inflow_multiple') ?? 0}
+          onChange={(v) => setG('adequacy', { net_inflow_multiple: v })} />
+        <SmeField label="Trajectory: months observed" value={g('trajectory', 'months_observed') ?? 0}
+          onChange={(v) => setG('trajectory', { months_observed: v })} />
+        <SmeField label="Trajectory: falling months" value={g('trajectory', 'falling_months') ?? 0}
+          onChange={(v) => setG('trajectory', { falling_months: v })} />
+        <SmeField label="Trajectory: step-down ratio (0–1)" value={g('trajectory', 'stepdown_ratio') ?? 0}
+          onChange={(v) => setG('trajectory', { stepdown_ratio: v })} />
+        <SmeSelect label="Trajectory: trend" value={g('trajectory', 'trend') || 'FLAT'}
+          options={[['FLAT', 'Flat'], ['RISING', 'Rising'], ['FALLING', 'Falling']]}
+          onChange={(v) => setG('trajectory', { trend: v })} />
+        <SmeField type="bool" label="Identity: registered" value={g('identity', 'registration') ?? false}
+          onChange={(v) => setG('identity', { observed: true, registration: v })} />
+        <SmeField type="bool" label="Identity: tax current" value={g('identity', 'tax_current') ?? false}
+          onChange={(v) => setG('identity', { observed: true, tax_current: v })} />
+        <SmeField type="bool" label="Identity: beneficial owners verified" value={g('identity', 'beneficial_owners') ?? false}
+          onChange={(v) => setG('identity', { observed: true, beneficial_owners: v })} />
+        <SmeField type="bool" label="Identity: address confirmed" value={g('identity', 'address') ?? false}
+          onChange={(v) => setG('identity', { observed: true, address: v })} />
+        <SmeField type="bool" label="Identity: SIM registered to business" value={g('identity', 'sim_match') ?? false}
+          onChange={(v) => setG('identity', { observed: true, sim_match: v })} />
+        <SmeField label="Identity: name changes across sources" value={g('identity', 'name_changes') ?? 0}
+          onChange={(v) => setG('identity', { observed: true, name_consistency_observed: true, name_changes: v })} />
+        <SmeField type="bool" label="Market: chair confirms standing" value={g('market', 'chair_confirms') ?? false}
+          onChange={(v) => setG('market', { chair_confirms: v })} />
+        <SmeField label="Market: association months" value={g('market', 'association_months') ?? 0}
+          onChange={(v) => setG('market', { association_months: v })} />
+        <SmeField label="Tenure: months on platform" value={g('tenure', 'months') ?? 0}
+          onChange={(v) => setG('tenure', { months: v })} />
+        <SmeField type="bool" label="Tenure: auto-pay performing" value={g('tenure', 'autopay_performing') ?? false}
+          onChange={(v) => setG('tenure', { autopay_performing: v })} />
+        <SmeField type="bool" label="Formalisation: registered" value={g('formalisation', 'registered') ?? false}
+          onChange={(v) => setG('formalisation', { observed: true, registered: v })} />
+        <SmeField type="bool" label="Formalisation: tax current" value={g('formalisation', 'tax_current') ?? false}
+          onChange={(v) => setG('formalisation', { observed: true, tax_current: v })} />
+        <SmeField label="Formalisation: trade references" value={g('formalisation', 'ref_count') ?? 0}
+          onChange={(v) => setG('formalisation', { observed: true, ref_count: v })} />
+        <SmeSelect label="Formalisation: reference quality" value={g('formalisation', 'ref_quality') || 'none'}
+          options={[['none', 'None stated'], ['fair', 'Fair'], ['strong', 'Strong']]}
+          onChange={(v) => setG('formalisation', { observed: true, ref_quality: v })} />
+      </div>
+    </>
   )
 }
 
@@ -303,7 +461,7 @@ function MetricsPanel({ metrics }) {
 function DecisionRecord({ res, onBook, booked, busy }) {
   const gates = Object.entries(res.gates || {})
   const declined = res.decision === 'DECLINE'
-  const bts = res.scorecard?.bts  // consumer files only (decisioning mapper attaches BTSResult)
+  const bts = res.scorecard?.bts  // both segments (decisioning mapper attaches the segment's BTSResult)
 
   return (
     <>
@@ -400,7 +558,7 @@ function BtsPanel({ bts }) {
           {bts.confidence_badge ? ` · confidence ${bts.confidence_badge}` : ''}</span>
       </p>
 
-      <p className="eyebrow">BTS v2 characteristics (band · points / available)</p>
+      <p className="eyebrow">Scorecard characteristics (band · points / available)</p>
       <div className="inset mono">
         {bts.characteristics.map((c) => (
           <div key={c.char_id} title={c.rationale}>
@@ -416,7 +574,7 @@ function BtsPanel({ bts }) {
         ))}
       </div>
 
-      <p className="eyebrow">Poor-twin diagnostic (same file, every observed band forced E)</p>
+      <p className="eyebrow">Poor-twin diagnostic (same file, bands floored at the poor mark)</p>
       <p className="mono">poor twin {bts.poor_twin_bts} ({bts.poor_twin_tier}) — the gap proves
         the card scores quality, not presence</p>
 
