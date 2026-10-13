@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  CheckCircle2, FileCheck2, FileUp, RefreshCw, Search,
-  ShieldAlert, ShieldCheck, UploadCloud, XCircle,
+  BadgeCheck, Banknote, CheckCircle2, FileCheck2, FileSpreadsheet, FileText,
+  FileUp, IdCard, RefreshCw, Search, UploadCloud, XCircle,
 } from 'lucide-react'
 
 const COLORS = {
@@ -36,6 +36,48 @@ const scoreTone = (value) => {
   return { color: COLORS.green, label: 'Low' }
 }
 
+// Document catalogue: what the upload panel expects for each slot — types,
+// size ceiling, and the plain-language instruction shown to the operator.
+const MAX_FILE_MB = 5
+const DOC_SLOTS = [
+  {
+    key: 'IDENTITY',
+    label: 'Identity document',
+    icon: IdCard,
+    idTypeField: true,          // National ID vs Passport picker
+    types: ['National ID', 'Passport'],
+    accept: '.pdf,.png,.jpg,.jpeg,.webp',
+    hint: 'Scan or photo of the ID page. PDF, PNG, JPG or WEBP up to 5 MB.',
+  },
+  {
+    key: 'INCOME',
+    label: 'Income document',
+    icon: Banknote,
+    idTypeField: false,
+    types: ['M-Pesa statement', 'Bank statement'],
+    accept: '.pdf',
+    hint: 'Last 3 months of statements. PDF only, up to 5 MB.',
+  },
+  {
+    key: 'BUREAU_REPORT',
+    label: 'Bureau report',
+    icon: FileSpreadsheet,
+    idTypeField: false,
+    types: null,
+    accept: '.pdf',
+    hint: 'CRB report pulled within the last 30 days. PDF only, up to 5 MB.',
+  },
+  {
+    key: 'OTHER',
+    label: 'Other supporting document',
+    icon: FileText,
+    idTypeField: false,
+    types: null,
+    accept: '.pdf,.png,.jpg,.jpeg,.webp',
+    hint: 'Payslips, utility bills, collateral documents, etc. PDF or image up to 5 MB.',
+  },
+]
+
 function Metric({ label, value, suffix = '', tone }) {
   return (
     <div className="soft2" style={{ padding: 16 }}>
@@ -56,6 +98,58 @@ function Pill({ children, tone = COLORS.green }) {
   )
 }
 
+// One upload slot in Panel 2: catalogue row + optional ID/income-type picker,
+// file picker with type/size validation, and per-slot status.
+function DocSlot({ slot, value, onChange, uploaded }) {
+  const Icon = slot.icon
+  const error = value.error
+  return (
+    <div className="soft" style={{ padding: 14, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Icon size={17} style={{ color: COLORS.green }} />
+        <strong style={{ flex: 1 }}>{slot.label}</strong>
+        {uploaded
+          ? <Pill><CheckCircle2 size={13} /> on file</Pill>
+          : <span className="note" style={{ margin: 0 }}>required</span>}
+      </div>
+      <p className="note" style={{ marginTop: 0 }}>{slot.hint}</p>
+
+      {slot.idTypeField && (
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Identity document type
+          <select value={value.idType} onChange={(e) => onChange(slot.key, { ...value, idType: e.target.value })}>
+            {slot.types.map((t) => <option key={t}>{t}</option>)}
+          </select>
+        </label>
+      )}
+      {!slot.idTypeField && slot.types && (
+        <label style={{ display: 'block', marginBottom: 8 }}>
+          Income document type
+          <select value={value.incomeType} onChange={(e) => onChange(slot.key, { ...value, incomeType: e.target.value })}>
+            {slot.types.map((t) => <option key={t}>{t}</option>)}
+          </select>
+        </label>
+      )}
+
+      <label style={{ display: 'block' }}>
+        <span className="note">Document file</span>
+        <div style={{ border: `1px dashed ${COLORS.border}`, borderRadius: 10, padding: 12, marginTop: 5, textAlign: 'center' }}>
+          <UploadCloud size={20} style={{ color: COLORS.green }} />
+          <input
+            type="file"
+            accept={slot.accept}
+            onChange={(e) => onChange(slot.key, { ...value, file: e.target.files?.[0] || null, error: null })}
+            style={{ display: 'block', margin: '8px auto 0' }}
+          />
+          {value.file && <span className="note">{value.file.name} · {(value.file.size / 1024 / 1024).toFixed(2)} MB</span>}
+          {uploaded && <span className="note">Last upload: {uploaded.original_filename || uploaded.mime}</span>}
+        </div>
+      </label>
+      {error && <p className="error" style={{ marginTop: 8 }}>{error}</p>}
+    </div>
+  )
+}
+
 export default function DocumentVerification({ initialSeed, userProfile }) {
   const [applicants, setApplicants] = useState([])
   const [selectedId, setSelectedId] = useState('')
@@ -65,9 +159,10 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
   const [seedBusy, setSeedBusy] = useState(false)
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
-  const [file, setFile] = useState(null)
-  const [docType, setDocType] = useState('IDENTITY')
-  const [source, setSource] = useState('upload')
+  const [submitBusy, setSubmitBusy] = useState(false)
+  // Panel 2 state: one slot value per catalogue entry {file, idType/incomeType, error}
+  const [slots, setSlots] = useState(() => Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', error: null }])))
+  const formRef = useRef(null)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -100,6 +195,11 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
     }
   }, [initialSeed])
 
+  // Reset the upload slots whenever a different application is selected.
+  useEffect(() => {
+    setSlots(Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', error: null }])))
+  }, [selectedId])
+
   const seedDocuments = async () => {
     setSeedBusy(true); setError(null); setMessage(null)
     try {
@@ -111,27 +211,53 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
     finally { setSeedBusy(false) }
   }
 
-  const uploadDocument = async (e) => {
+  const setSlot = (key, patch) => setSlots((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
+
+  // Client-side gate before any upload: file present, extension allowed, size ceiling.
+  const validateSlot = (slot, value) => {
+    if (!value.file) return 'Choose a file to upload.'
+    const ext = `.${value.file.name.split('.').pop().toLowerCase()}`
+    if (!slot.accept.split(',').includes(ext)) return `File type ${ext} is not accepted for ${slot.label} (allowed: ${slot.accept}).`
+    if (value.file.size > MAX_FILE_MB * 1024 * 1024) return `File exceeds the ${MAX_FILE_MB} MB limit (${(value.file.size / 1024 / 1024).toFixed(1)} MB).`
+    return null
+  }
+
+  // Submit: validate every filled slot, ingest each in turn, then refresh.
+  const submitVerification = async (e) => {
     e.preventDefault()
-    if (!file || !selectedId) return
-    setLoading(true); setError(null); setMessage(null)
+    if (!selectedId) { setError('Select an application first.'); return }
+    const filled = DOC_SLOTS.filter((s) => slots[s.key].file)
+    if (!filled.length) { setError('Attach at least one document to submit.'); return }
+    for (const s of filled) {
+      const err = validateSlot(s, slots[s.key])
+      if (err) { setSlot(s.key, { error: err }); return }
+    }
+    setSubmitBusy(true); setError(null); setMessage(null)
     try {
-      const form = new FormData()
-      form.append('app_id', selectedId)
-      form.append('doc_type', docType)
-      form.append('source', source)
-      form.append('file', file)
-      await request('/api/document-verification/documents/', { method: 'POST', body: form })
-      setFile(null)
-      // e.currentTarget.reset()
-      setMessage('Document ingested and verification checks completed.')
+      for (const s of filled) {
+        const form = new FormData()
+        form.append('app_id', selectedId)
+        form.append('doc_type', s.key)
+        // Type pickers ride along as the source label so the audit trail shows
+        // National ID vs Passport / M-Pesa vs bank statement.
+        const typePick = s.idTypeField ? slots[s.key].idType : (s.types ? slots[s.key].incomeType : null)
+        form.append('source', typePick ? `${typePick} (upload)` : 'upload')
+        form.append('file', slots[s.key].file)
+        await request('/api/document-verification/documents/', { method: 'POST', body: form })
+      }
+      setSlots(Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: slots[s.key].idType, incomeType: slots[s.key].incomeType, error: null }])))
+      setMessage(`Ingested and verified ${filled.length} document${filled.length > 1 ? 's' : ''}. Forensic checks and the fraud score have been refreshed.`)
       await loadResult(selectedId)
     } catch (err) { setError(err.message) }
-    finally { setLoading(false) }
+    finally { setSubmitBusy(false) }
   }
+
+  const refresh = () => loadResult(selectedId)
 
   const score = result?.fraud_score
   const tone = scoreTone(score?.composite)
+  const app = result?.application
+  const onFile = (docType) => (result?.documents || []).find((d) => d.doc_type === docType)
 
   return (
     <div className="grid">
@@ -141,9 +267,9 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
           <p className="note">Ingest immutable document evidence, run forensic checks, consolidate fraud signals, and review the applicant outcome.</p>
         </div>
         <button className="btn brass" onClick={seedDocuments} disabled={seedBusy || loading}>
-          <DatabaseIcon /> {seedBusy ? 'Seeding…' : 'Seed Documents'}
+          <FileCheck2 size={15} /> {seedBusy ? 'Seeding…' : 'Seed Documents'}
         </button>
-        <button className="btn ghost" onClick={() => loadResult(selectedId)} disabled={!selectedId || loading}>
+        <button className="btn ghost" onClick={refresh} disabled={!selectedId || loading}>
           <RefreshCw size={15} /> Refresh
         </button>
       </div>
@@ -152,47 +278,62 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
       {error && <p className="error">{error}</p>}
 
       <div className="grid cols-2">
+        {/* Panel 1 — Application details */}
         <div className="panel">
-          <h2>Applicant</h2>
+          <h2>Application details</h2>
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <Search size={15} style={{ position: 'absolute', left: 10, top: 11, color: COLORS.muted }} />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name or application ID" style={{ paddingLeft: 32, width: '100%' }} />
             </div>
             <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>
-              <option value="">Select applicant</option>
-              {filtered.map((a) => <option key={a.app_id} value={a.app_id}>{a.name} — {a.app_id}</option>)}
+              <option value="">Select application</option>
+              {filtered.map((a) => <option key={a.app_id} value={a.app_id}>{a.name} — {a.app_id.slice(0, 8)}</option>)}
             </select>
           </div>
-          {result ? (
+          {result && app ? (
             <div className="soft" style={{ padding: 16 }}>
-              <strong>{result.applicant?.name}</strong>
-              <div className="note" style={{ marginTop: 5 }}>{result.app_id} · {result.application?.status} · {result.application?.channel}</div>
-              <div className="grid cols-3" style={{ marginTop: 14 }}>
-                <Metric label="Requested" value={Number(result.application?.amount_requested || 0).toLocaleString()} />
-                <Metric label="Tenure" value={result.application?.tenure || 0} suffix=" mo" />
-                <Metric label="Bureau score" value={result.applicant?.bureau_score ?? '—'} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <BadgeCheck size={17} style={{ color: COLORS.green }} />
+                <strong style={{ fontSize: 15 }}>{app.application_number || `APP-${result.app_id.slice(0, 8).toUpperCase()}`}</strong>
+                <Pill>{app.status}</Pill>
               </div>
+              <table><tbody>
+                <tr><td>Product</td><td className="right mono">{app.product || '—'}</td></tr>
+                <tr><td>Applicant</td><td className="right">{result.applicant?.name}</td></tr>
+                <tr><td>Amount requested</td><td className="right mono">KES {Number(app.amount_requested || 0).toLocaleString()}</td></tr>
+                <tr><td>Loan tenure</td><td className="right mono">{app.tenure || 0} months</td></tr>
+                <tr><td>Purpose</td><td className="right">{app.purpose || '—'}</td></tr>
+                <tr><td>Channel</td><td className="right mono">{app.channel}</td></tr>
+                <tr><td>Declared income</td><td className="right mono">{result.declaration?.income != null ? `KES ${Number(result.declaration.income).toLocaleString()}` : '—'}</td></tr>
+                <tr><td>Employment</td><td className="right">{result.declaration?.employment || '—'}</td></tr>
+                <tr><td>Bureau score</td><td className="right mono">{result.applicant?.bureau_score ?? '—'}</td></tr>
+              </tbody></table>
             </div>
-          ) : <p className="note">Seed or select an applicant to view verification results.</p>}
+          ) : <p className="note">{loading ? 'Loading…' : 'Seed or select an application to view its details.'}</p>}
         </div>
 
-        <form className="panel" onSubmit={uploadDocument}>
-          <h2>Ingest document</h2>
-          <p className="note">Upload a PDF/image or provide a source label. The server stores the blob hash and creates a new immutable forensic check run.</p>
-          <div className="grid cols-2">
-            <label>Document type<select value={docType} onChange={(e) => setDocType(e.target.value)}><option>IDENTITY</option><option>INCOME</option><option>BANK_STATEMENT</option><option>ADDRESS</option><option>OTHER</option></select></label>
-            <label>Source<select value={source} onChange={(e) => setSource(e.target.value)}><option value="upload">Upload</option><option value="AA">Account Aggregator</option><option value="DigiLocker">DigiLocker</option></select></label>
-          </div>
-          <label style={{ display: 'block', marginTop: 12 }}>
-            <span className="note">Document file</span>
-            <div style={{ border: `1px dashed ${COLORS.border}`, borderRadius: 12, padding: 18, marginTop: 6, textAlign: 'center' }}>
-              <UploadCloud size={24} style={{ color: COLORS.green }} />
-              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ display: 'block', margin: '10px auto 0' }} />
-              {file && <span className="note">{file.name}</span>}
-            </div>
-          </label>
-          <button className="btn" type="submit" disabled={!file || !selectedId || loading} style={{ marginTop: 14 }}><FileUp size={15} /> {loading ? 'Verifying…' : 'Ingest & Verify'}</button>
+        {/* Panel 2 — Application documents + submit */}
+        <form className="panel" onSubmit={submitVerification} ref={formRef}>
+          <h2>Application documents</h2>
+          <p className="note">
+            Upload the documents the loan file needs. Files are hashed and stored immutably; each upload
+            triggers a forensic check run. Accepted: PDF or image (PDF only for income and bureau report),
+            max {MAX_FILE_MB} MB per file.
+          </p>
+          {DOC_SLOTS.map((slot) => (
+            <DocSlot
+              key={slot.key}
+              slot={slot}
+              value={slots[slot.key]}
+              onChange={setSlot}
+              uploaded={onFile(slot.key)}
+            />
+          ))}
+          <button className="btn" type="submit" disabled={submitBusy || loading || !selectedId} style={{ marginTop: 4 }}>
+            <FileUp size={15} /> {submitBusy ? 'Verifying…' : 'Submit for verification'}
+          </button>
+          {!selectedId && <p className="note" style={{ marginTop: 8 }}>Select an application above to enable submission.</p>}
         </form>
       </div>
 
@@ -227,7 +368,7 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
           </div>
 
           <div className="panel">
-            <h2>Documents</h2>
+            <h2>Documents on file</h2>
             <table><thead><tr><th>Type</th><th>Source</th><th>MIME</th><th>Hash</th><th>Verified</th></tr></thead><tbody>
               {(result.documents || []).map((d) => <tr key={d.doc_id}><td>{d.doc_type}</td><td>{d.source}</td><td>{d.mime}</td><td className="mono">{d.hash?.slice(0, 18)}…</td><td>{d.verified ? <CheckCircle2 size={16} style={{ color: COLORS.green }} /> : <XCircle size={16} style={{ color: COLORS.red }} />}</td></tr>)}
             </tbody></table>
@@ -237,5 +378,3 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
     </div>
   )
 }
-
-function DatabaseIcon() { return <FileCheck2 size={15} /> }

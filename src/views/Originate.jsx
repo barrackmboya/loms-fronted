@@ -60,7 +60,10 @@ const BUREAU_FIELDS = [
 const btsTone = (tier) => (
   { Platinum: 'ok', Gold: 'ok', Silver: 'info', Bronze: 'warn', 'Below Bronze': 'bad' }[tier] || 'info'
 )
-const prettify = (s) => s.replace(/_/g, ' ').toLowerCase()
+const bandChipTone = (b) => (
+  { A: 'ok', B: 'ok', C: 'info', D: 'warn', E: 'bad' }[b] || 'muted'
+)
+const prettify = (s) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())
 
 export default function Originate({ onBooked, userProfile }) {
   const [form, setForm] = useState(BLANK)
@@ -474,7 +477,7 @@ function DecisionRecord({ res, onBook, booked, busy }) {
 
         {bts && <BtsPanel bts={bts} />}
 
-        <p className="eyebrow">Gates</p>
+        <p className="eyebrow band">Gates</p>
         {gates.map(([key, gate]) => (
           <div className="gate" key={key}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -487,7 +490,7 @@ function DecisionRecord({ res, onBook, booked, busy }) {
           </div>
         ))}
 
-        <p className="eyebrow">Reason codes</p>
+        <p className="eyebrow band">Reason codes</p>
         <p className="mono">{(res.reason_codes || []).join(' · ') || 'none'}</p>
 
         <p style={{ marginTop: 16 }}>
@@ -524,7 +527,7 @@ function DecisionRecord({ res, onBook, booked, busy }) {
           <Meter value={res.fraud.composite / 1000}
             tone={res.fraud.composite > 640 ? 'bad' : res.fraud.composite > 420 ? 'warn' : ''} />
 
-          <p className="eyebrow">Signals above warn</p>
+          <p className="eyebrow band">Signals above warn</p>
           <div className="inset mono">
             {res.fraud.signals.length
               ? res.fraud.signals.map(([code, value]) => (
@@ -532,14 +535,14 @@ function DecisionRecord({ res, onBook, booked, busy }) {
               : 'none'}
           </div>
 
-          <p className="eyebrow">If this file ever reaches collections</p>
+          <p className="eyebrow band">If this file ever reaches collections</p>
           <div className="inset mono">
-            right-party contact {pct(res.collection_propensity.p_right_party_contact)}<br />
-            recovery if default {pct(res.collection_propensity.expected_recovery_rate_if_default)}<br />
-            mandate {res.collection_propensity.recommended_mandate_type}
+            Right-party contact {pct(res.collection_propensity.p_right_party_contact)}<br />
+            Recovery if default {pct(res.collection_propensity.expected_recovery_rate_if_default)}<br />
+            Mandate {res.collection_propensity.recommended_mandate_type}
           </div>
 
-          <p className="eyebrow">Model provenance</p>
+          <p className="eyebrow band">Model provenance</p>
           <p className="mono" style={{ color: 'var(--muted)' }}>
             {Object.entries(res.model_versions).map(([k, v]) => `${k} ${v}`).join(' · ')}
           </p>
@@ -549,38 +552,118 @@ function DecisionRecord({ res, onBook, booked, busy }) {
   )
 }
 
+// Score-tier zones shared by both segments' tier tables (03_Policy): the gauge
+// marks where the score landed and which tier thresholds it sits between.
+const TIER_ZONES = [
+  { tier: 'Platinum', min: 850 },
+  { tier: 'Gold', min: 700 },
+  { tier: 'Silver', min: 500 },
+  { tier: 'Bronze', min: 250 },
+  { tier: 'Below Bronze', min: 0 },
+]
+
+function BtsGauge({ bts }) {
+  const tone = btsTone(bts.tier)
+  return (
+    <div className="bts-gauge">
+      <div className="bts-gauge-head">
+        <span className="bts-score" data-tone={tone}>{bts.bts}</span>
+        <div>
+          <Tag tone={tone}>{bts.tier}</Tag>
+          <div className="mono" style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
+            partner map {bts.partner_map} · {bts.file_class}
+            {bts.confidence_badge ? ` · confidence ${bts.confidence_badge}` : ''}
+          </div>
+        </div>
+      </div>
+      <div className="bts-track">
+        <div className={`bts-fill ${tone}`} style={{ width: `${Math.max(bts.bts / 10, 1)}%` }} />
+        {TIER_ZONES.filter((z) => z.min > 0).map((z) => (
+          <span key={z.tier} className="bts-tick" style={{ left: `${z.min / 10}%` }}
+            title={`${z.tier} from ${z.min}`} />
+        ))}
+      </div>
+      {/* Score axis runs 0 (left) → 1000 (right); each label sits under its tick. */}
+      <div className="bts-scale mono">
+        {TIER_ZONES.slice().reverse().map((z) => (
+          <span key={z.tier}
+            className={z.tier === bts.tier ? 'bts-tier-label active' : 'bts-tier-label'}
+            style={{ left: `${z.min / 10}%`, ...(z.min === 0 ? {} : { transform: 'translateX(-50%)' }) }}>
+            {z.tier} {z.min}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// One row per characteristic: id, band chip, points bar (pts against max_pts) —
+// hover any row for the banding rationale.
+function CharRows({ characteristics }) {
+  return (
+    <table className="char-table">
+      <thead>
+        <tr><th>Characteristic</th><th>Band</th><th className="right">Points</th></tr>
+      </thead>
+      <tbody>
+        {characteristics.map((c) => (
+          <tr key={c.char_id} title={c.rationale}>
+            <td>{c.char_id}</td>
+            <td>
+              <Tag tone={bandChipTone(c.band)}>{c.band}</Tag>
+              {c.source === 'OVERRIDE' && <span className="mono ov-flag"> · override</span>}
+            </td>
+            <td className="right mono">{c.band === 'M' ? '—' : `${c.pts}/${c.max_pts}`}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// Domain budgets as horizontal usage bars: fill = points spent, budget caps the
+// track, % used to the right (tone flips to warn/bad as the domain saturates).
+function DomainBars({ domains }) {
+  return (
+    <div className="domain-list">
+      {Object.entries(domains).map(([domain, d]) => {
+        const tone = d.used >= 0.85 ? 'bad' : d.used >= 0.6 ? 'warn' : ''
+        return (
+          <div className="domain-row" key={domain}>
+            <span className="domain-name">{domain}</span>
+            <div className="bar domain-bar">
+              <i style={{ width: `${Math.min(Math.max(d.used * 100, 1), 100)}%`, background: tone ? `var(--${tone})` : 'var(--teal)' }} />
+            </div>
+            <span className="right mono domain-nums">{d.pts}/{d.budget} · {pct(d.used, 1)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function BtsPanel({ bts }) {
   return (
     <>
-      <p style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
-        <Tag tone={btsTone(bts.tier)}>BTS {bts.bts}</Tag>
-        <span className="mono">tier {bts.tier} · partner map {bts.partner_map} · {bts.file_class}
-          {bts.confidence_badge ? ` · confidence ${bts.confidence_badge}` : ''}</span>
-      </p>
+      <BtsGauge bts={bts} />
 
-      <p className="eyebrow">Scorecard characteristics (band · points / available)</p>
-      <div className="inset mono">
-        {bts.characteristics.map((c) => (
-          <div key={c.char_id} title={c.rationale}>
-            {c.char_id} · band {c.band}{c.source === 'OVERRIDE' ? ' (override)' : ''} · {c.pts}/{c.max_pts}
-          </div>
-        ))}
+      <p className="eyebrow band">Scorecard characteristics (band · points / available)</p>
+      <div className="inset">
+        <CharRows characteristics={bts.characteristics} />
       </div>
 
-      <p className="eyebrow">Domain budgets used</p>
-      <div className="inset mono">
-        {Object.entries(bts.domains).map(([domain, d]) => (
-          <div key={domain}>{domain}: {d.pts}/{d.budget} ({pct(d.used, 1)})</div>
-        ))}
+      <p className="eyebrow band">Domain budgets used</p>
+      <div className="inset">
+        <DomainBars domains={bts.domains} />
       </div>
 
-      <p className="eyebrow">Poor-twin diagnostic (same file, bands floored at the poor mark)</p>
+      <p className="eyebrow band">Poor-twin diagnostic (same file, bands floored at the poor mark)</p>
       <p className="mono">poor twin {bts.poor_twin_bts} ({bts.poor_twin_tier}) — the gap proves
         the card scores quality, not presence</p>
 
       {bts.reasons?.length > 0 && (
         <>
-          <p className="eyebrow">How to improve this score</p>
+          <p className="eyebrow band">How to improve this score</p>
           <div className="inset mono">
             {bts.reasons.map((rc) => (
               <div key={rc.code} title={rc.language}>

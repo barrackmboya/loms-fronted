@@ -76,7 +76,14 @@ main { padding: var(--s4) 22px 48px; max-width: 1200px; margin: 0 auto; }
   box-shadow: inset 3px 3px 7px #d2d9d3, inset -3px -3px 7px #ffffff;
 }
 .panel h2, .soft h2 { font: 600 15px var(--sans); margin-bottom: var(--s2); }
-.eyebrow { color: var(--muted); font-size: 12px; margin: var(--s3) 0 var(--s1); }
+.eyebrow { color: var(--ink-soft); font-size: 12px; font-weight: 600; margin: var(--s3) 0 var(--s1); }
+/* Decision-panel section labels: a subtle full-width band that the dark label
+   text contrasts against (the form keeps the bare eyebrow). */
+.eyebrow.band {
+  background: #e9efeb;
+  padding: 5px 10px;
+  border-radius: 2px;
+}
 .note { color: var(--muted); font-size: 13px; margin: 0 0 var(--s2); }
 
 .grid { display: grid; gap: 14px; }
@@ -98,6 +105,7 @@ tr:last-child td { border-bottom: 0; }
 .tag { display: inline-block; padding: 2px 8px; font-size: 12px; font-weight: 500; color: #fff; border-radius: 2px; }
 .tag.ok { background: var(--ok); } .tag.warn { background: var(--warn); }
 .tag.bad { background: var(--bad); } .tag.info { background: var(--info); }
+.tag.muted { background: #8a968f; }
 
 .bar { height: 9px; background: #e1e6e2; }
 .bar > i { display: block; height: 100%; background: var(--teal); }
@@ -109,7 +117,7 @@ tr:last-child td { border-bottom: 0; }
 .gate .why { color: var(--muted); font-size: 12px; }
 
 /* ---------- controls ---------- */
-label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+label { display: block; font-size: 12px; color: var(--ink-soft); font-weight: 600; margin: 10px 0 3px; }
 input, select { width: 100%; padding: 8px; border: 1px solid var(--line); background: #fff; font: 14px var(--sans); }
 input:disabled { background: #f4f6f4; }
 
@@ -143,6 +151,52 @@ input:disabled { background: #f4f6f4; }
 }
 
 
+/* ---------- BTS scorecard visuals (Originate Decision panel) ---------- */
+
+/* Score gauge: big tone-coloured number + 0–1000 track with tier tick marks. */
+.bts-gauge { margin-bottom: var(--s2); }
+.bts-gauge-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.bts-score {
+  font: 600 30px/1 var(--display);
+  color: #fff; background: var(--info);
+  padding: 8px 12px; border-radius: 2px; min-width: 84px; text-align: center;
+}
+.bts-score[data-tone='ok'] { background: var(--ok); }
+.bts-score[data-tone='warn'] { background: var(--warn); }
+.bts-score[data-tone='bad'] { background: var(--bad); }
+.bts-score[data-tone='info'] { background: var(--info); }
+
+/* 0–1000 track with ticks at each tier's minimum score (left = 0, right = 1000). */
+.bts-track {
+  position: relative; height: 10px; background: #e1e6e2; border-radius: 1px;
+}
+.bts-fill { height: 100%; border-radius: 1px; background: var(--info); }
+.bts-fill.ok { background: var(--ok); }
+.bts-fill.warn { background: var(--warn); }
+.bts-fill.bad { background: var(--bad); }
+.bts-tick {
+  position: absolute; top: -2px; bottom: -2px; width: 2px;
+  background: var(--ink-soft); opacity: .45; transform: translateX(-1px);
+}
+/* Threshold labels anchored under their tick position on the 0→1000 track;
+   the landed tier is highlighted. */
+.bts-scale { position: relative; height: 16px; margin-top: 4px; }
+.bts-tier-label { position: absolute; top: 0; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.bts-tier-label.active { color: var(--ink); font-weight: 600; }
+
+/* Characteristics table: band chips + points column (kept mono). */
+.char-table td { font-size: 12.5px; padding: 6px 8px; }
+.char-table th { font-size: 11.5px; padding: 4px 8px; }
+.char-table .mono { font-size: 12.5px; }
+.ov-flag { color: var(--brass); font-size: 11px; }
+
+/* Domain budgets: name | usage bar | pts/budget · % — one row per domain. */
+.domain-list { display: flex; flex-direction: column; gap: 8px; }
+.domain-row { display: grid; grid-template-columns: 96px 1fr 128px; align-items: center; gap: 10px; }
+.domain-name { font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.domain-bar { height: 10px; }
+.domain-nums { font-size: 12px; color: var(--muted); }
+
 /* ---------- loader ---------- */
 .loader {
   display: flex;
@@ -172,7 +226,7 @@ input:disabled { background: #f4f6f4; }
 }
 
 /* ---------- controls & buttons ---------- */
-label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+label { display: block; font-size: 12px; color: var(--ink-soft); font-weight: 600; margin: 10px 0 3px; }
 input, select { width: 100%; padding: 8px; border: 1px solid var(--line); background: #fff; font: 14px var(--sans); }
 input:disabled { background: #f4f6f4; }
 
