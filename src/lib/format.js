@@ -5,3 +5,4 @@ export const bandTone = (b) => ({ GREEN: 'ok', AMBER: 'warn', RED: 'bad' }[b] ||
 export const stageTone = (s) => ({ 1: 'info', 2: 'warn', 3: 'bad' }[s] || 'info')
 export const decisionTone = (d) =>
   ({ APPROVE: 'ok', CONDITIONAL: 'warn', DECLINE: 'bad' }[d] || 'info')
+export const prettify = (s) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())

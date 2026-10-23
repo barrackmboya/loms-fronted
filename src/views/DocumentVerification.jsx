@@ -150,6 +150,19 @@ function DocSlot({ slot, value, onChange, uploaded }) {
   )
 }
 
+// Product options for the application details panel. PERSONAL_LOAN is the
+// standard retail product; the others mirror the loan product catalogue.
+const PRODUCT_OPTIONS = [
+  'PERSONAL_LOAN',
+  'BUSINESS_LOAN',
+  'LOGBOOK_LOAN',
+  'SALARY_ADVANCE',
+  'ASSET_FINANCE',
+  'MORTGAGE',
+  'EDUCATION_LOAN',
+  'DIGITAL_LOAN',
+]
+
 export default function DocumentVerification({ initialSeed, userProfile }) {
   const [applicants, setApplicants] = useState([])
   const [selectedId, setSelectedId] = useState('')
@@ -160,6 +173,10 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
   const [message, setMessage] = useState(null)
   const [error, setError] = useState(null)
   const [submitBusy, setSubmitBusy] = useState(false)
+  // Panel 1 editable fields: draft values the operator can adjust before
+  // submitting documents. Populated from the loaded application.
+  const [form, setForm] = useState({ product: 'PERSONAL_LOAN', applicant: '', applicantType: 'INDIVIDUAL', existingCustomer: 'No', amount: '', tenure: '' })
+  const [formDirty, setFormDirty] = useState(false)
   // Panel 2 state: one slot value per catalogue entry {file, idType/incomeType, error}
   const [slots, setSlots] = useState(() => Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', error: null }])))
   const formRef = useRef(null)
@@ -200,6 +217,26 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
     setSlots(Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', error: null }])))
   }, [selectedId])
 
+  // Hydrate the editable application fields whenever a result loads (or
+  // reverts them after refresh) without clobbering in-progress edits mid-load.
+  useEffect(() => {
+    const app = result?.application
+    setForm({
+      product: app?.product || 'PERSONAL_LOAN',
+      applicant: result?.applicant?.name || '',
+      applicantType: result?.applicant?.party_type === 'BUSINESS' ? 'BUSINESS' : 'INDIVIDUAL',
+      existingCustomer: 'No',
+      amount: app?.amount_requested != null ? String(app.amount_requested) : '',
+      tenure: app?.tenure != null ? String(app.tenure) : '',
+    })
+    setFormDirty(false)
+  }, [result])
+
+  const setField = (key, value) => {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    setFormDirty(true)
+  }
+
   const seedDocuments = async () => {
     setSeedBusy(true); setError(null); setMessage(null)
     try {
@@ -235,15 +272,23 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
     setSubmitBusy(true); setError(null); setMessage(null)
     try {
       for (const s of filled) {
-        const form = new FormData()
-        form.append('app_id', selectedId)
-        form.append('doc_type', s.key)
+        const payload = new FormData()
+        payload.append('app_id', selectedId)
+        payload.append('doc_type', s.key)
         // Type pickers ride along as the source label so the audit trail shows
         // National ID vs Passport / M-Pesa vs bank statement.
         const typePick = s.idTypeField ? slots[s.key].idType : (s.types ? slots[s.key].incomeType : null)
-        form.append('source', typePick ? `${typePick} (upload)` : 'upload')
-        form.append('file', slots[s.key].file)
-        await request('/api/document-verification/documents/', { method: 'POST', body: form })
+        payload.append('source', typePick ? `${typePick} (upload)` : 'upload')
+        // Panel 1 edits ride along with the submission so the verification
+        // request reflects the operator-adjusted application details.
+        payload.append('product', form.product)
+        payload.append('applicant_name', form.applicant)
+        payload.append('applicant_type', form.applicantType)
+        payload.append('existing_customer', form.existingCustomer)
+        payload.append('amount_requested', form.amount)
+        payload.append('tenure', form.tenure)
+        payload.append('file', slots[s.key].file)
+        await request('/api/document-verification/documents/', { method: 'POST', body: payload })
       }
       setSlots(Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: slots[s.key].idType, incomeType: slots[s.key].incomeType, error: null }])))
       setMessage(`Ingested and verified ${filled.length} document${filled.length > 1 ? 's' : ''}. Forensic checks and the fraud score have been refreshed.`)
@@ -298,17 +343,41 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
                 <strong style={{ fontSize: 15 }}>{app.application_number || `APP-${result.app_id.slice(0, 8).toUpperCase()}`}</strong>
                 <Pill>{app.status}</Pill>
               </div>
-              <table><tbody>
-                <tr><td>Product</td><td className="right mono">{app.product || '—'}</td></tr>
-                <tr><td>Applicant</td><td className="right">{result.applicant?.name}</td></tr>
-                <tr><td>Amount requested</td><td className="right mono">KES {Number(app.amount_requested || 0).toLocaleString()}</td></tr>
-                <tr><td>Loan tenure</td><td className="right mono">{app.tenure || 0} months</td></tr>
-                <tr><td>Purpose</td><td className="right">{app.purpose || '—'}</td></tr>
-                <tr><td>Channel</td><td className="right mono">{app.channel}</td></tr>
-                <tr><td>Declared income</td><td className="right mono">{result.declaration?.income != null ? `KES ${Number(result.declaration.income).toLocaleString()}` : '—'}</td></tr>
-                <tr><td>Employment</td><td className="right">{result.declaration?.employment || '—'}</td></tr>
-                <tr><td>Bureau score</td><td className="right mono">{result.applicant?.bureau_score ?? '—'}</td></tr>
-              </tbody></table>
+              <div className="grid cols-2">
+                <label>
+                  Product name
+                  <select value={form.product} onChange={(e) => setField('product', e.target.value)}>
+                    {PRODUCT_OPTIONS.map((p) => <option key={p} value={p}>{p.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Applicant name
+                  <input value={form.applicant} onChange={(e) => setField('applicant', e.target.value)} placeholder="Applicant name" />
+                </label>
+                <label>
+                  Applicant type
+                  <select value={form.applicantType} onChange={(e) => setField('applicantType', e.target.value)}>
+                    <option value="INDIVIDUAL">Individual</option>
+                    <option value="BUSINESS">Business</option>
+                  </select>
+                </label>
+                <label>
+                  Existing customer
+                  <select value={form.existingCustomer} onChange={(e) => setField('existingCustomer', e.target.value)}>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </label>
+                <label>
+                  Amount requested (KES)
+                  <input type="number" min="0" step="any" value={form.amount} onChange={(e) => setField('amount', e.target.value)} placeholder="e.g. 250000" />
+                </label>
+                <label>
+                  Loan tenure (months)
+                  <input type="number" min="1" step="1" value={form.tenure} onChange={(e) => setField('tenure', e.target.value)} placeholder="e.g. 24" />
+                </label>
+              </div>
+              {formDirty && <p className="note" style={{ marginTop: 8, marginBottom: 0 }}>Edited values will be attached to this application's verification submission.</p>}
             </div>
           ) : <p className="note">{loading ? 'Loading…' : 'Seed or select an application to view its details.'}</p>}
         </div>
@@ -337,44 +406,7 @@ export default function DocumentVerification({ initialSeed, userProfile }) {
         </form>
       </div>
 
-      {result && (
-        <>
-          <div className="grid cols-4">
-            <Metric label="Composite fraud score" value={Number(score?.composite || 0).toFixed(1)} suffix=" / 100" tone={tone.color} />
-            <Metric label="First-party" value={Number(score?.first_party || 0).toFixed(1)} suffix=" / 100" />
-            <Metric label="Third-party" value={Number(score?.third_party || 0).toFixed(1)} suffix=" / 100" />
-            <Metric label="Synthetic" value={Number(score?.synthetic || 0).toFixed(1)} suffix=" / 100" />
-          </div>
 
-          <div className="panel">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div><h2>Fraud decision</h2><p className="note">Fusion layer output from document forensics and fraud signals.</p></div>
-              <Pill tone={tone.color}>{score?.decision || 'REVIEW'} · {tone.label}</Pill>
-            </div>
-            <div className="grid cols-2" style={{ marginTop: 12 }}>
-              <div>
-                <h3>DOC_FORENSIC</h3>
-                <table><thead><tr><th>Check</th><th className="right">Value</th></tr></thead><tbody>
-                  {(result.doc_forensic || []).map((row) => <tr key={row.id}><td>{row.check_type || 'Run'} <span className="note">#{row.id}</span></td><td className="right mono">Tamper {Number(row.tamper_score).toFixed(2)} · Meta {row.metadata_anomaly ? 'Yes' : 'No'} · Template {Number(row.template_match).toFixed(2)} · Vendor {Number(row.vendor_score).toFixed(2)}</td></tr>)}
-                </tbody></table>
-              </div>
-              <div>
-                <h3>FRAUD_SIGNAL</h3>
-                <table><thead><tr><th>Signal</th><th>Severity</th><th>Source</th><th className="right">Value</th></tr></thead><tbody>
-                  {(result.fraud_signals || []).map((s) => <tr key={s.id}><td className="mono">{s.signal_code}</td><td><Pill tone={s.severity === 'HIGH' ? COLORS.red : s.severity === 'MEDIUM' ? COLORS.gold : COLORS.green}>{s.severity}</Pill></td><td>{s.source}</td><td className="right mono">{String(s.value)}</td></tr>)}
-                </tbody></table>
-              </div>
-            </div>
-          </div>
-
-          <div className="panel">
-            <h2>Documents on file</h2>
-            <table><thead><tr><th>Type</th><th>Source</th><th>MIME</th><th>Hash</th><th>Verified</th></tr></thead><tbody>
-              {(result.documents || []).map((d) => <tr key={d.doc_id}><td>{d.doc_type}</td><td>{d.source}</td><td>{d.mime}</td><td className="mono">{d.hash?.slice(0, 18)}…</td><td>{d.verified ? <CheckCircle2 size={16} style={{ color: COLORS.green }} /> : <XCircle size={16} style={{ color: COLORS.red }} />}</td></tr>)}
-            </tbody></table>
-          </div>
-        </>
-      )}
     </div>
   )
 }

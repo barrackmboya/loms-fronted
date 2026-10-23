@@ -53,6 +53,23 @@ button { font: inherit; }
 }
 .tabs button[aria-selected='true'] { color: #fff; border-bottom-color: var(--brass); }
 
+/* Sub-tabs within a module (origination: New application / Decision record) */
+.subtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: var(--s3); }
+.subtabs button {
+  display: flex; align-items: center; gap: 7px;
+  background: none; border: 0; border-bottom: 3px solid transparent;
+  color: var(--muted); padding: 9px 13px; cursor: pointer; white-space: nowrap; font-weight: 500;
+}
+.subtabs button[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--brass); }
+.subtabs button:hover { color: var(--ink); }
+
+/* Decision record page slides in when Run decision lands on it */
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(26px); }
+  to { opacity: 1; transform: none; }
+}
+.slide-in { animation: slide-in .3s ease-out; }
+
 main { padding: var(--s4) 22px 48px; max-width: 1200px; margin: 0 auto; }
 
 /* ---------- surfaces ---------- */
@@ -156,33 +173,30 @@ input:disabled { background: #f4f6f4; }
 /* Score gauge: big tone-coloured number + 0–1000 track with tier tick marks. */
 .bts-gauge { margin-bottom: var(--s2); }
 .bts-gauge-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-.bts-score {
-  font: 600 30px/1 var(--display);
-  color: #fff; background: var(--info);
-  padding: 8px 12px; border-radius: 2px; min-width: 84px; text-align: center;
-}
-.bts-score[data-tone='ok'] { background: var(--ok); }
-.bts-score[data-tone='warn'] { background: var(--warn); }
-.bts-score[data-tone='bad'] { background: var(--bad); }
-.bts-score[data-tone='info'] { background: var(--info); }
 
-/* 0–1000 track with ticks at each tier's minimum score (left = 0, right = 1000). */
+/* 0–1000 credit gauge: the track graduates red → amber → green in three even
+   zones across the full scale (0, 250, 500, 700, 850 ticked below); the
+   needle marks where the file landed. The gauge is inset from the panel edges
+   so the end tier labels (Below Bronze / Platinum) stay inside the panel. */
 .bts-track {
-  position: relative; height: 10px; background: #e1e6e2; border-radius: 1px;
+  position: relative; height: 10px; border-radius: 1px; margin-top: 16px;
+  margin-left: 48px; margin-right: 48px;
+  background: linear-gradient(90deg, var(--bad) 0%, var(--warn) 50%, var(--ok) 100%);
 }
-.bts-fill { height: 100%; border-radius: 1px; background: var(--info); }
-.bts-fill.ok { background: var(--ok); }
-.bts-fill.warn { background: var(--warn); }
-.bts-fill.bad { background: var(--bad); }
-.bts-tick {
+.bts-scale-mark {
   position: absolute; top: -2px; bottom: -2px; width: 2px;
-  background: var(--ink-soft); opacity: .45; transform: translateX(-1px);
+  background: var(--ink-soft); opacity: .5; transform: translateX(-1px);
 }
-/* Threshold labels anchored under their tick position on the 0→1000 track;
-   the landed tier is highlighted. */
-.bts-scale { position: relative; height: 16px; margin-top: 4px; }
-.bts-tier-label { position: absolute; top: 0; font-size: 10.5px; color: var(--muted); white-space: nowrap; }
-.bts-tier-label.active { color: var(--ink); font-weight: 600; }
+.bts-needle-label {
+  position: absolute; top: -22px; left: 50%; font-size: 11px; font-weight: 600;
+  color: var(--ink); white-space: nowrap; transform: translateX(-50%);
+}
+.bts-scale { position: relative; height: 16px; margin-top: 4px; margin-left: 48px; margin-right: 48px; }
+.bts-scale > span {
+  position: absolute; top: 0; transform: translateX(-50%); text-align: center;
+}
+.bts-scale-score { font-size: 9px; font-weight: 600; color: var(--ink); display: block; line-height: 1; margin-bottom: 2px; }
+.bts-scale-label { font-size: 10px; color: var(--muted); display: block; line-height: 1; }
 
 /* Characteristics table: band chips + points column (kept mono). */
 .char-table td { font-size: 12.5px; padding: 6px 8px; }
@@ -299,6 +313,18 @@ input:disabled { background: #f4f6f4; }
   border-color: rgba(231, 236, 232, 0.5);
   color: #ffffff;
   transform: translateY(-1px);
+}
+
+/* Ghost on light panels (e.g. the Decision record's "New application" action) */
+.panel .btn.ghost, .soft .btn.ghost {
+  background-color: transparent;
+  color: var(--ink);
+  border-color: #3d5651;
+}
+.panel .btn.ghost:hover:not(:disabled), .soft .btn.ghost:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-color: var(--ink);
+  color: var(--ink);
 }
 
 .btn.ghost:active:not(:disabled) {

@@ -1,17 +1,25 @@
 import { useState, useEffect, useCallback } from 'react'
-import { CheckCircle2, Fingerprint, ShieldAlert, XCircle } from 'lucide-react'
-import { api } from '../lib/api'
-import { decisionTone, money, pct } from '../lib/format'
-import { Empty, Meter, Rows, Tag } from '../components'
+import { FilePlus2, Gavel } from 'lucide-react'
+import { api, authHeaders } from '../lib/api'
+import { DOC_SLOTS, DEMO_EXTRACTION, validateSlot } from './OriginateApplication'
+import OriginateApplication from './OriginateApplication'
+import OriginateDecisioning from './OriginateDecisioning'
 
+// Container for the origination module: owns the application form state and the
+// decide/book flows, and switches between two pages — "New application"
+// (OriginateApplication.jsx, always visible) and "Decision record"
+// (OriginateDecisioning.jsx, appears — sliding in — once a decision has been
+// run, and offers a fresh "New application" action).
 // Mirrors ApplicationCreateSerializer (apps/origination/serializers.py): every
 // underwriting input the backend reads is represented here — including KYC
 // evidence, stated vs verified income, and product/collateral. KYC evidence has
 // no defaults (Phase 4): a NEW applicant states the facts (form opens
 // conservative); a RETURNING applicant is picked by party_id and the backend
-// reuses their stored KYC evidence. A BUSINESS (ORG) applicant states the sheet-13
-// SME evidence groups instead of the consumer KYC block; the backend scores the
-// business card (hybrid: SME tier drives the offer, the logistic PD stays at G6).
+// reuses their stored KYC evidence. Face match, liveness and address tenure are
+// pipeline facts (eKYC / document service), not operator inputs. A BUSINESS (ORG)
+// applicant states the sheet-13 SME evidence groups instead of the consumer KYC
+// block; the backend scores the business card (hybrid: SME tier drives the offer,
+// the logistic PD stays at G6).
 const SME_BLANK_EVIDENCE = {
   consent: true,
   trade_repayment: { months_observed: 12, months_on_time: 7, delays_30d: 2, disputes: 0 },
@@ -29,41 +37,21 @@ const SME_BLANK_EVIDENCE = {
 
 const BLANK = {
   name: '',
+  product_name: 'PERSONAL_LOAN',
   product: 'UNSECURED', collateral_value: 0,
   amount_requested: 250000, tenure_months: 24,
   stated_income: 95000, verified_income: 95000, existing_debt_service: 9000,
   bureau_score: 690, bureau_enquiries_6m: 2, delinquencies_12m: 0, bounces_6m: 0,
   doc_source: 'UPLOAD', device_apps_24h: 1, tamper_score: 0.08, salary_domiciled: false,
   ip_geo_mismatch: false,
-  kyc_status: 'PENDING', face_match: 0, liveness: 0, sanctions_hit: true,
-  phone_verified: false, address_tenure_months: 0,
+  kyc_status: 'PENDING', sanctions_hit: true,
+  phone_verified: false,
   party_id: null, party_type: 'IND',
   sme_evidence: SME_BLANK_EVIDENCE,
 }
 
-const KYC_FIELDS = [
-  ['face_match', 'Face match (0–1)'], ['liveness', 'Liveness (0–1)'],
-  ['address_tenure_months', 'Address tenure (months)'],
-]
-const INCOME_FIELDS = [
-  ['stated_income', 'Stated monthly income'], ['verified_income', 'Verified monthly income'],
-  ['existing_debt_service', 'Existing debt service'], ['amount_requested', 'Amount requested'],
-  ['tenure_months', 'Tenure (months)'],
-]
-const BUREAU_FIELDS = [
-  ['bureau_score', 'Bureau score'], ['bureau_enquiries_6m', 'Enquiries, last 6 months'],
-  ['delinquencies_12m', 'Delinquencies, last 12 months'], ['bounces_6m', 'Bounced debits, last 6 months'],
-  ['device_apps_24h', 'Applications from this device, 24h'], ['tamper_score', 'Worst document tamper score'],
-  ['collateral_value', 'Collateral value'],
-]
-
-const btsTone = (tier) => (
-  { Platinum: 'ok', Gold: 'ok', Silver: 'info', Bronze: 'warn', 'Below Bronze': 'bad' }[tier] || 'info'
-)
-const bandChipTone = (b) => (
-  { A: 'ok', B: 'ok', C: 'info', D: 'warn', E: 'bad' }[b] || 'muted'
-)
-const prettify = (s) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())
+const BLANK_DOC_SLOTS = () =>
+  Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', error: null }]))
 
 export default function Originate({ onBooked, userProfile }) {
   const [form, setForm] = useState(BLANK)
@@ -75,12 +63,33 @@ export default function Originate({ onBooked, userProfile }) {
   const [metrics, setMetrics] = useState(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
   const [metricsError, setMetricsError] = useState(null)
+  // Which page of the module is showing: the application form or the decision record
+  const [page, setPage] = useState('application')
   // applicant source: pick an existing customer or state a new one's evidence
   const [existing, setExisting] = useState(false)
   const [parties, setParties] = useState([])
   const [partySearch, setPartySearch] = useState('')
+  // Document upload slots (panel copied from DocumentVerification.jsx): one
+  // {file, idType, incomeType, error} per catalogue entry, ingested on submit.
+  const [docSlots, setDocSlots] = useState(BLANK_DOC_SLOTS)
+  const [docBusy, setDocBusy] = useState(false)
+  // M-Pesa statement income analysis (POST /api/applications/{id}/income-analysis):
+  // fetched for the INCOME slot's uploaded statement once the application exists, so
+  // the decision record shows statement-derived income features next to the decision.
+  const [income, setIncome] = useState(null)
+  // KRA PIN certificate extraction (POST /api/applications/{id}/kra-pin): fetched for
+  // the IDENTITY slot's uploaded certificate (or OTHER when the ID slot holds an
+  // image ID), so the decision record shows the certificate's PIN/name/address facts.
+  const [kyc, setKyc] = useState(null)
+  // CRB report extraction (POST /api/applications/{id}/crb-report): fetched for the
+  // BUREAU_REPORT slot's uploaded report, so the decision record shows the real
+  // Metro-Score / enquiries / bounced-cheques facts instead of the demo values.
+  const [crb, setCrb] = useState(null)
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }))
+  const resetForm = () => setForm((f) => ({ ...f, ...BLANK, party_id: null }))
+  const setSlot = (key, patch) =>
+    setDocSlots((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }))
   const hasAccess = userProfile?.accessible_modules?.includes('origination') ?? false
 
   const loadParties = useCallback(async (search) => {
@@ -126,29 +135,97 @@ export default function Originate({ onBooked, userProfile }) {
         setError('Select a customer before running the decision.')
         return
       }
+      // Document extraction (demo): the uploaded documents populate the KYC,
+      // income/affordability and bureau/device fields — the operator never keys
+      // them. Until the real pipeline is wired, each attached slot contributes
+      // its DEMO_EXTRACTION values; a returning customer keeps their stored facts.
+      const attached = DOC_SLOTS.filter((s) => docSlots[s.key].file)
+      for (const s of attached) {
+        const err = validateSlot(s, docSlots[s.key])
+        if (err) { setSlot(s.key, { error: err }); return }
+      }
+      if (attached.length && !existing) {
+        setForm((f) => ({ ...f, ...Object.assign({}, ...attached.map((s) => DEMO_EXTRACTION[s.key])) }))
+      }
       const org = form.party_type === 'ORG'
-      // The backend takes either party_id (KYC evidence reused) or the full KYC
-      // statement — never both. party_id is destructured out so a new-applicant
-      // submit never posts the blank form's null (the backend would refuse it).
+      // The backend takes either party_id (KYC evidence reused) or the KYC statement
+      // — never both. party_id is destructured out so a new-applicant submit never
+      // posts the blank form's null (the backend would refuse it). Every KYC,
+      // income and bureau fact came from the uploaded documents (demo-extracted),
+      // not from operator keying.
       // Segment-consistent payloads: an ORG file carries the SME evidence groups
       // (and the party_type the backend mirrors onto the Party row), an IND file
       // carries the consumer KYC block — never both.
-      const { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
-              address_tenure_months, name, party_id, party_type, sme_evidence, ...rest } = form
+      const { kyc_status, sanctions_hit, phone_verified,
+              name, party_id, party_type, sme_evidence, ...rest } = form
       const payload = org
         ? (existing
             ? { party_id, party_type, sme_evidence, ...rest }
-            : { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
-                address_tenure_months, name, party_type, sme_evidence, ...rest })
+            : { kyc_status, sanctions_hit, phone_verified,
+                name, party_type, sme_evidence, ...rest })
         : (existing
             ? { ...rest, party_id }
-            : { kyc_status, face_match, liveness, sanctions_hit, phone_verified,
-                address_tenure_months, name, ...rest })
+            : { kyc_status, sanctions_hit, phone_verified, name, ...rest })
       const app = await api.createApplication(payload)
       setAppId(app.application_id)
+      // Ingest the attached documents against the saved application, then decide.
+      if (attached.length) {
+        setDocBusy(true)
+        try {
+          for (const s of attached) {
+            const body = new FormData()
+            body.append('app_id', app.application_id)
+            body.append('doc_type', s.key)
+            const typePick = s.idTypeField ? docSlots[s.key].idType : (s.types ? docSlots[s.key].incomeType : null)
+            body.append('source', typePick ? `${typePick} (upload)` : 'upload')
+            body.append('file', docSlots[s.key].file)
+            await fetch('/api/document-verification/documents/', { method: 'POST', body })
+            // An M-Pesa statement in the INCOME slot also runs through the income
+            // analysis engine; its failure never blocks the decision run.
+            if (s.key === 'INCOME' && /\.xlsx?$/i.test(docSlots[s.key].file.name)) {
+              try {
+                const incomeRes = await fetch(`/api/applications/${app.application_id}/income-analysis`, {
+                  method: 'POST', headers: authHeaders(), body,
+                })
+                if (incomeRes.ok) setIncome(await incomeRes.json())
+              } catch { /* the panel simply shows no income analysis */ }
+            }
+            // A PDF in the IDENTITY slot is treated as the KRA PIN certificate; its
+            // extraction, like the income analysis, never blocks the decision run.
+            if (s.key === 'IDENTITY' && /\.pdf$/i.test(docSlots[s.key].file.name)) {
+              try {
+                const kycRes = await fetch(`/api/applications/${app.application_id}/kra-pin`, {
+                  method: 'POST', headers: authHeaders(), body,
+                })
+                if (kycRes.ok) setKyc(await kycRes.json())
+              } catch { /* the panel simply shows no certificate extraction */ }
+            }
+            // A PDF in the BUREAU_REPORT slot runs through the CRB extractor; the
+            // extracted bureau fields replace the demo values in the form, and the
+            // failure of any of this never blocks the decision run.
+            if (s.key === 'BUREAU_REPORT' && /\.pdf$/i.test(docSlots[s.key].file.name)) {
+              try {
+                const crbRes = await fetch(`/api/applications/${app.application_id}/crb-report`, {
+                  method: 'POST', headers: authHeaders(), body,
+                })
+                if (crbRes.ok) {
+                  const crbJson = await crbRes.json()
+                  setCrb(crbJson)
+                  if (crbJson.fields) {
+                    setForm((f) => ({ ...f, ...crbJson.fields }))
+                  }
+                }
+              } catch { /* the panel simply shows no bureau extraction */ }
+            }
+          }
+        } catch { /* ingest failures don't block the decision run */ }
+        setDocBusy(false)
+      }
       setResult(await api.decide(app.application_id))
+      // The decision record page slides in as soon as the decision exists.
+      setPage('decision')
       loadMetrics()
-    } catch (e) { setError(e.message) } finally { setBusy(false) }
+    } catch (e) { setError(e.message) } finally { setBusy(false); setDocBusy(false) }
   }
 
   const book = async () => {
@@ -161,518 +238,51 @@ export default function Originate({ onBooked, userProfile }) {
     catch (e) { setError(e.message) } finally { setBusy(false) }
   }
 
+  // "New application" from the decision record page: clear the run (the Decision
+  // record tab disappears until the next decision) and open a blank form.
+  const startNewApplication = () => {
+    setResult(null); setAppId(null); setBooked(null); setError(null)
+    setIncome(null); setKyc(null); setCrb(null)
+    resetForm()
+    setExisting(false)
+    setDocSlots(BLANK_DOC_SLOTS())
+    setPage('application')
+  }
+
   return (
-    <div className="grid cols-2 w-[98vw] mx-auto">
-      <div className="panel">
-        <h1>New application</h1>
-        <p className="note">Stated and verified income stay separate — the scorecard and
-          affordability engine only read the verified figure. Consumer files run the BTS v2
-          card, business files the SME card — each replaces the bureau logistic at the
-          credit gate (the logistic PD stays at G6 and pricing).</p>
-
-        <p className="eyebrow">Applicant</p>
-        <div className="grid cols-2">
-          <div>
-            <label htmlFor="party_type">Applicant type</label>
-            <select id="party_type" value={form.party_type}
-              disabled={existing}
-              onChange={(e) => set('party_type', e.target.value)}>
-              <option value="IND">Individual</option>
-              <option value="ORG">Business</option>
-            </select>
-          </div>
-          <Bool id="applicant_existing" label="Existing customer" value={existing} onChange={(v) => {
-            setExisting(v)
-            if (v) { set('party_id', null) } else { setForm((f) => ({ ...f, ...BLANK, party_id: null })) }
-          }} />
-          {existing
-            ? <div>
-                <label htmlFor="party_id">Applicant</label>
-                <select id="party_id" value={form.party_id ?? ''}
-                  onChange={(e) => set('party_id', e.target.value ? Number(e.target.value) : null)}>
-                  <option value="">{parties.length ? 'Select customer…' : 'No customers found'}</option>
-                  {parties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.party_type === 'ORG' ? 'Business' : 'Individual'} · KYC {p.kyc_status}{p.sanctions_hit ? ' · SANCTIONS HIT' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            : <div>
-                <label htmlFor="name">{form.party_type === 'ORG' ? 'Business name' : 'Name'}</label>
-                <input id="name" value={form.name} onChange={(e) => set('name', e.target.value)} />
-              </div>
-          }
-        </div>
-
-        {!existing && form.party_type === 'ORG' && (
-          <SmeEvidenceFields form={form} set={set} />
-        )}
-
-        {!existing && form.party_type === 'IND' && (
-          <>
-            <p className="eyebrow">KYC evidence (new applicant)</p>
-            <p className="muted">Stated by the operator — nothing is assumed. The form opens
-              conservative (sanctions un-cleared, phone unverified); flip each to the verified fact.</p>
-            <div className="grid cols-2">
-              <div>
-                <label htmlFor="kyc_status">KYC status</label>
-                <select id="kyc_status" value={form.kyc_status} onChange={(e) => set('kyc_status', e.target.value)}>
-                  <option value="VERIFIED">Verified</option>
-                  <option value="PENDING">Pending</option>
-                  <option value="FAILED">Failed</option>
-                  <option value="EDD">Enhanced due diligence</option>
-                </select>
-              </div>
-              {KYC_FIELDS.map(([key, label]) => (
-                <div key={key}>
-                  <label htmlFor={key}>{label}</label>
-                  <input id={key} type="number" step="any" value={form[key]}
-                    onChange={(e) => set(key, Number(e.target.value))} />
-                </div>
-              ))}
-              <Bool id="phone_verified" label="Phone verified" value={form.phone_verified} onChange={(v) => set('phone_verified', v)} />
-              <Bool id="sanctions_hit" label="Sanctions hit" value={form.sanctions_hit} onChange={(v) => set('sanctions_hit', v)} />
-            </div>
-          </>
-        )}
-        {existing && form.party_type === 'ORG' && (
-          <SmeEvidenceFields form={form} set={set} />
-        )}
-
-        <p className="eyebrow">Product</p>
-        <div className="grid cols-2">
-          <div>
-            <label htmlFor="product">Product</label>
-            <select id="product" value={form.product} onChange={(e) => set('product', e.target.value)}>
-              <option value="UNSECURED">Unsecured</option>
-              <option value="SECURED">Secured</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="collateral_value">Collateral value{form.product === 'SECURED' ? ' (required)' : ''}</label>
-            <input id="collateral_value" type="number" step="any" min="0" value={form.collateral_value}
-              onChange={(e) => set('collateral_value', Number(e.target.value))} />
-          </div>
-        </div>
-
-        <p className="eyebrow">Income and affordability</p>
-        <div className="grid cols-2">
-          {INCOME_FIELDS.map(([key, label]) => (
-            <div key={key}>
-              <label htmlFor={key}>{label}</label>
-              <input id={key} type="number" step="any" value={form[key]}
-                onChange={(e) => set(key, Number(e.target.value))} />
-            </div>
-          ))}
-          <div>
-            <label htmlFor="doc_source">Income verification source</label>
-            <select id="doc_source" value={form.doc_source} onChange={(e) => set('doc_source', e.target.value)}>
-              <option value="AA">Account aggregator</option>
-              <option value="EMPLOYER">Employer API</option>
-              <option value="UPLOAD">Customer upload</option>
-            </select>
-          </div>
-          <Bool id="salary_domiciled" label="Salary domiciled with us" value={form.salary_domiciled} onChange={(v) => set('salary_domiciled', v)} />
-        </div>
-
-        <p className="eyebrow">Bureau, device and documents</p>
-        <div className="grid cols-2">
-          {BUREAU_FIELDS.map(([key, label]) => (
-            <div key={key}>
-              <label htmlFor={key}>{label}</label>
-              <input id={key} type="number" step="any" value={form[key]}
-                onChange={(e) => set(key, Number(e.target.value))} />
-            </div>
-          ))}
-          <Bool id="ip_geo_mismatch" label="IP vs KYC geo mismatch" value={form.ip_geo_mismatch} onChange={(v) => set('ip_geo_mismatch', v)} />
-        </div>
-
-        {metricsLoading && <p>Loading origination metrics...</p>}
-        {metricsError && <p className="error">{metricsError}</p>}
-        {metrics && <MetricsPanel metrics={metrics} />}
-
-        <p style={{ marginTop: 18 }}>
-          <button className="btn" disabled={busy} onClick={decide}>
-            <Fingerprint size={16} /> {busy ? 'Deciding…' : 'Run decision'}
+    <div>
+      <nav className="subtabs" role="tablist">
+        <button role="tab" aria-selected={page === 'application'}
+          onClick={() => setPage('application')}>
+          <FilePlus2 size={15} /> New application
+        </button>
+        {result && (
+          <button role="tab" aria-selected={page === 'decision'}
+            onClick={() => setPage('decision')}>
+            <Gavel size={15} /> Decision record
           </button>
-        </p>
-        {error && <p className="error">{error}</p>}
-      </div>
-
-      <div className="grid">
-        {result
-          ? <DecisionRecord res={result} onBook={book} booked={booked} busy={busy} />
-          : <div className="soft">
-              <h2>Decision record</h2>
-              <Empty>Submit a file to see gates G1–G9, the scorecard breakdown for the
-                applicant's segment (bands, domains, poor-twin diagnostic, DIY actions),
-                which constraint bound the limit, the priced offer, and how collectable
-                this borrower would be if the loan ever went bad.</Empty>
-            </div>
-        }
-      </div>
-    </div>
-  )
-}
-
-function Bool({ id, label, value, onChange }) {
-  return (
-    <div>
-      <label htmlFor={id}>{label}</label>
-      <select id={id} value={String(value)} onChange={(e) => onChange(e.target.value === 'true')}>
-        <option value="true">Yes</option><option value="false">No</option>
-      </select>
-    </div>
-  )
-}
-
-// One row of the sheet-13 SME evidence editor: updates a single key inside
-// sme_evidence[group] (or an owner-obligation array row) without touching the rest.
-function SmeField({ label, type = 'number', value, onChange }) {
-  if (type === 'bool') return <Bool label={label} value={value} onChange={onChange} />
-  return (
-    <div>
-      <label>{label}</label>
-      <input type={type} step="any" value={value} onChange={(e) => onChange(
-        e.target.type === 'number' ? Number(e.target.value) : e.target.value)} />
-    </div>
-  )
-}
-
-function SmeSelect({ label, value, options, onChange }) {
-  return (
-    <div>
-      <label>{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map(([v, text]) => <option key={v} value={v}>{text}</option>)}
-      </select>
-    </div>
-  )
-}
-
-// Sheet-13 evidence groups, stated by the operator — every key the business
-// card's band ladders read (risk_engine/bts/sme_bands.py). Unstated evidence
-// bands M (0 pts, excluded from available_max) — absence never dilutes.
-function SmeEvidenceFields({ form, set }) {
-  const ev = form.sme_evidence || {}
-  const g = (group, key) => (ev[group] || {})[key]
-  // set inside one evidence group, preserving the other groups (consent sits at
-  // the top level of sme_evidence, beside the groups)
-  const setEv = (patch) => set('sme_evidence', { ...ev, ...patch })
-  const setG = (group, patch) => setEv({ [group]: { ...ev[group], ...patch } })
-  const setObli = (i, key, v) => setEv({
-    owner_obligations: ev.owner_obligations.map((o, j) => (j === i ? { ...o, [key]: v } : o)),
-  })
-  const obli = ev.owner_obligations?.[0] || {}
-  return (
-    <>
-      <p className="eyebrow">Business evidence (SME scorecard)</p>
-      <p className="muted">Stated by the operator — nothing is assumed. The business card
-        bands each group; unobserved groups band M and never dilute what is observed.</p>
-      <div className="grid cols-2">
-        <Bool label="Consent to data use" value={ev.consent ?? true} onChange={(v) => setEv({ consent: v })} />
-        <SmeField label="Trade: months observed" value={g('trade_repayment', 'months_observed') ?? 0}
-          onChange={(v) => setG('trade_repayment', { months_observed: v })} />
-        <SmeField label="Trade: months on time" value={g('trade_repayment', 'months_on_time') ?? 0}
-          onChange={(v) => setG('trade_repayment', { months_on_time: v })} />
-        <SmeField label="Trade: 30-day delays" value={g('trade_repayment', 'delays_30d') ?? 0}
-          onChange={(v) => setG('trade_repayment', { delays_30d: v })} />
-        <SmeField label="Trade: disputes on file" value={g('trade_repayment', 'disputes') ?? 0}
-          onChange={(v) => setG('trade_repayment', { disputes: v })} />
-        <SmeField label="Owner obligation family" type="text" value={obli.family || ''}
-          onChange={(v) => setObli(0, 'family', v)} />
-        <SmeField label="Owner obligation: months" value={obli.months_observed ?? 0}
-          onChange={(v) => setObli(0, 'months_observed', v)} />
-        <SmeField label="Owner obligation: on-time ratio (0–1)" value={obli.on_time_ratio ?? 0}
-          onChange={(v) => setObli(0, 'on_time_ratio', v)} />
-        <SmeField label="Rail: months active" value={g('rail', 'months_active') ?? 0}
-          onChange={(v) => setG('rail', { months_active: v })} />
-        <SmeField label="Rail: reversal rate (0–1)" value={g('rail', 'reversal_rate') ?? 0}
-          onChange={(v) => setG('rail', { reversal_rate: v })} />
-        <SmeField label="Till: months observed" value={g('till', 'months_observed') ?? 0}
-          onChange={(v) => setG('till', { months_observed: v })} />
-        <SmeField label="Till: inflow CV" value={g('till', 'inflow_cv') ?? 0}
-          onChange={(v) => setG('till', { inflow_cv: v })} />
-        <SmeField type="bool" label="Till: seasonal but explained" value={g('till', 'seasonal_explained') ?? false}
-          onChange={(v) => setG('till', { seasonal_explained: v })} />
-        <SmeField label="Adequacy: net inflow × instalment" value={g('adequacy', 'net_inflow_multiple') ?? 0}
-          onChange={(v) => setG('adequacy', { net_inflow_multiple: v })} />
-        <SmeField label="Trajectory: months observed" value={g('trajectory', 'months_observed') ?? 0}
-          onChange={(v) => setG('trajectory', { months_observed: v })} />
-        <SmeField label="Trajectory: falling months" value={g('trajectory', 'falling_months') ?? 0}
-          onChange={(v) => setG('trajectory', { falling_months: v })} />
-        <SmeField label="Trajectory: step-down ratio (0–1)" value={g('trajectory', 'stepdown_ratio') ?? 0}
-          onChange={(v) => setG('trajectory', { stepdown_ratio: v })} />
-        <SmeSelect label="Trajectory: trend" value={g('trajectory', 'trend') || 'FLAT'}
-          options={[['FLAT', 'Flat'], ['RISING', 'Rising'], ['FALLING', 'Falling']]}
-          onChange={(v) => setG('trajectory', { trend: v })} />
-        <SmeField type="bool" label="Identity: registered" value={g('identity', 'registration') ?? false}
-          onChange={(v) => setG('identity', { observed: true, registration: v })} />
-        <SmeField type="bool" label="Identity: tax current" value={g('identity', 'tax_current') ?? false}
-          onChange={(v) => setG('identity', { observed: true, tax_current: v })} />
-        <SmeField type="bool" label="Identity: beneficial owners verified" value={g('identity', 'beneficial_owners') ?? false}
-          onChange={(v) => setG('identity', { observed: true, beneficial_owners: v })} />
-        <SmeField type="bool" label="Identity: address confirmed" value={g('identity', 'address') ?? false}
-          onChange={(v) => setG('identity', { observed: true, address: v })} />
-        <SmeField type="bool" label="Identity: SIM registered to business" value={g('identity', 'sim_match') ?? false}
-          onChange={(v) => setG('identity', { observed: true, sim_match: v })} />
-        <SmeField label="Identity: name changes across sources" value={g('identity', 'name_changes') ?? 0}
-          onChange={(v) => setG('identity', { observed: true, name_consistency_observed: true, name_changes: v })} />
-        <SmeField type="bool" label="Market: chair confirms standing" value={g('market', 'chair_confirms') ?? false}
-          onChange={(v) => setG('market', { chair_confirms: v })} />
-        <SmeField label="Market: association months" value={g('market', 'association_months') ?? 0}
-          onChange={(v) => setG('market', { association_months: v })} />
-        <SmeField label="Tenure: months on platform" value={g('tenure', 'months') ?? 0}
-          onChange={(v) => setG('tenure', { months: v })} />
-        <SmeField type="bool" label="Tenure: auto-pay performing" value={g('tenure', 'autopay_performing') ?? false}
-          onChange={(v) => setG('tenure', { autopay_performing: v })} />
-        <SmeField type="bool" label="Formalisation: registered" value={g('formalisation', 'registered') ?? false}
-          onChange={(v) => setG('formalisation', { observed: true, registered: v })} />
-        <SmeField type="bool" label="Formalisation: tax current" value={g('formalisation', 'tax_current') ?? false}
-          onChange={(v) => setG('formalisation', { observed: true, tax_current: v })} />
-        <SmeField label="Formalisation: trade references" value={g('formalisation', 'ref_count') ?? 0}
-          onChange={(v) => setG('formalisation', { observed: true, ref_count: v })} />
-        <SmeSelect label="Formalisation: reference quality" value={g('formalisation', 'ref_quality') || 'none'}
-          options={[['none', 'None stated'], ['fair', 'Fair'], ['strong', 'Strong']]}
-          onChange={(v) => setG('formalisation', { observed: true, ref_quality: v })} />
-      </div>
-    </>
-  )
-}
-
-function MetricsPanel({ metrics }) {
-  const m = metrics?.metrics || {}
-  const vol = m.application_volume || {}
-  const docs = m.document_processing || {}
-  const dq = m.data_quality || {}
-  return (
-    <div className="metrics-panel">
-      <h3>Origination metrics</h3>
-      <div><strong>Applications today / week</strong>
-        <span>{vol.daily?.value ?? 0} · {vol.weekly?.value ?? 0}</span></div>
-      <div><strong>Documents processed</strong>
-        <span>{docs.total_documents_processed?.value ?? 0} · {docs.acceptance_rate?.value ?? 0}% accepted</span></div>
-      <div><strong>Average tamper score</strong>
-        <span>{docs.average_tamper_score?.value ?? 0}</span></div>
-      <div><strong>Data quality gaps</strong>
-        <span>{dq.missing_verified_income?.value ?? 0} unverified income · {dq.missing_bureau_data?.value ?? 0} no bureau</span></div>
-    </div>
-  )
-}
-
-function DecisionRecord({ res, onBook, booked, busy }) {
-  const gates = Object.entries(res.gates || {})
-  const declined = res.decision === 'DECLINE'
-  const bts = res.scorecard?.bts  // both segments (decisioning mapper attaches the segment's BTSResult)
-
-  return (
-    <>
-      <div className="panel">
-        <h2>Decision</h2>
-        <p style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
-          <Tag tone={decisionTone(res.decision)}>{res.decision}</Tag>
-          <span className="mono">grade {res.grade} · 12-month PD {pct(res.pd_12m, 2)}</span>
-        </p>
-
-        {bts && <BtsPanel bts={bts} />}
-
-        <p className="eyebrow band">Gates</p>
-        {gates.map(([key, gate]) => (
-          <div className="gate" key={key}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-              {gate.pass
-                ? <CheckCircle2 size={15} color="var(--ok)" />
-                : <XCircle size={15} color="var(--bad)" />}
-              {prettify(key)}
-            </span>
-            <span className="why">{gate.pass ? '' : gate.fail_path}</span>
-          </div>
-        ))}
-
-        <p className="eyebrow band">Reason codes</p>
-        <p className="mono">{(res.reason_codes || []).join(' · ') || 'none'}</p>
-
-        <p style={{ marginTop: 16 }}>
-          <button className="btn" disabled={busy || declined || booked} onClick={onBook}>
-            {booked ? 'Booked' : declined ? 'Cannot book a declined file' : 'Book and post day-1 ECL'}
-          </button>
-        </p>
-        {booked && (
-          <p className="mono" style={{ marginTop: 10 }}>
-            Account {booked.account_id} · stage {booked.day1_ecl.stage} ·
-            ECL {money(booked.day1_ecl.ecl)} on EAD {money(booked.day1_ecl.ead)}
-          </p>
         )}
-      </div>
+      </nav>
 
-      <div className="grid cols-2">
-        <div className="panel">
-          <h2>Limit and price</h2>
-          <Rows rows={[
-            ['Approved limit', money(res.limit_detail.approved_limit)],
-            ['Binding constraint', res.limit_detail.binding.join(', ')],
-            ['Debt service ratio', pct(res.affordability.dsr)],
-            ['Expected loss in price', pct(res.pricing.el_pct, 2)],
-            ['All-in rate', pct(res.pricing.all_in_rate, 2)],
-            ['Monthly instalment', money(res.pricing.monthly_instalment)],
-          ]} />
+      {page === 'application' ? (
+        <OriginateApplication
+          form={form} set={set} resetForm={resetForm}
+          existing={existing} setExisting={setExisting}
+          parties={parties} partySearch={partySearch} setPartySearch={setPartySearch}
+          docSlots={docSlots} setSlot={setSlot}
+          metrics={metrics} metricsLoading={metricsLoading} metricsError={metricsError}
+          busy={busy || docBusy} error={error}
+          onDecide={decide}
+        />
+      ) : (
+        // Keyed by appId so the slide-in plays again on every new decision.
+        <div className="grid slide-in" key={appId}>
+          <OriginateDecisioning res={result} form={form} income={income} kyc={kyc} crb={crb}
+            onBook={book}
+            booked={booked} busy={busy}
+            onNewApplication={startNewApplication} />
         </div>
-
-        <div className="soft">
-          <h2 style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <ShieldAlert size={16} /> Fraud fusion
-          </h2>
-          <p className="mono">{res.fraud.composite} / 1000 · {res.fraud.decision}</p>
-          <Meter value={res.fraud.composite / 1000}
-            tone={res.fraud.composite > 640 ? 'bad' : res.fraud.composite > 420 ? 'warn' : ''} />
-
-          <p className="eyebrow band">Signals above warn</p>
-          <div className="inset mono">
-            {res.fraud.signals.length
-              ? res.fraud.signals.map(([code, value]) => (
-                  <div key={code}>{code}: {String(value)}</div>))
-              : 'none'}
-          </div>
-
-          <p className="eyebrow band">If this file ever reaches collections</p>
-          <div className="inset mono">
-            Right-party contact {pct(res.collection_propensity.p_right_party_contact)}<br />
-            Recovery if default {pct(res.collection_propensity.expected_recovery_rate_if_default)}<br />
-            Mandate {res.collection_propensity.recommended_mandate_type}
-          </div>
-
-          <p className="eyebrow band">Model provenance</p>
-          <p className="mono" style={{ color: 'var(--muted)' }}>
-            {Object.entries(res.model_versions).map(([k, v]) => `${k} ${v}`).join(' · ')}
-          </p>
-        </div>
-      </div>
-    </>
-  )
-}
-
-// Score-tier zones shared by both segments' tier tables (03_Policy): the gauge
-// marks where the score landed and which tier thresholds it sits between.
-const TIER_ZONES = [
-  { tier: 'Platinum', min: 850 },
-  { tier: 'Gold', min: 700 },
-  { tier: 'Silver', min: 500 },
-  { tier: 'Bronze', min: 250 },
-  { tier: 'Below Bronze', min: 0 },
-]
-
-function BtsGauge({ bts }) {
-  const tone = btsTone(bts.tier)
-  return (
-    <div className="bts-gauge">
-      <div className="bts-gauge-head">
-        <span className="bts-score" data-tone={tone}>{bts.bts}</span>
-        <div>
-          <Tag tone={tone}>{bts.tier}</Tag>
-          <div className="mono" style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
-            partner map {bts.partner_map} · {bts.file_class}
-            {bts.confidence_badge ? ` · confidence ${bts.confidence_badge}` : ''}
-          </div>
-        </div>
-      </div>
-      <div className="bts-track">
-        <div className={`bts-fill ${tone}`} style={{ width: `${Math.max(bts.bts / 10, 1)}%` }} />
-        {TIER_ZONES.filter((z) => z.min > 0).map((z) => (
-          <span key={z.tier} className="bts-tick" style={{ left: `${z.min / 10}%` }}
-            title={`${z.tier} from ${z.min}`} />
-        ))}
-      </div>
-      {/* Score axis runs 0 (left) → 1000 (right); each label sits under its tick. */}
-      <div className="bts-scale mono">
-        {TIER_ZONES.slice().reverse().map((z) => (
-          <span key={z.tier}
-            className={z.tier === bts.tier ? 'bts-tier-label active' : 'bts-tier-label'}
-            style={{ left: `${z.min / 10}%`, ...(z.min === 0 ? {} : { transform: 'translateX(-50%)' }) }}>
-            {z.tier} {z.min}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// One row per characteristic: id, band chip, points bar (pts against max_pts) —
-// hover any row for the banding rationale.
-function CharRows({ characteristics }) {
-  return (
-    <table className="char-table">
-      <thead>
-        <tr><th>Characteristic</th><th>Band</th><th className="right">Points</th></tr>
-      </thead>
-      <tbody>
-        {characteristics.map((c) => (
-          <tr key={c.char_id} title={c.rationale}>
-            <td>{c.char_id}</td>
-            <td>
-              <Tag tone={bandChipTone(c.band)}>{c.band}</Tag>
-              {c.source === 'OVERRIDE' && <span className="mono ov-flag"> · override</span>}
-            </td>
-            <td className="right mono">{c.band === 'M' ? '—' : `${c.pts}/${c.max_pts}`}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-// Domain budgets as horizontal usage bars: fill = points spent, budget caps the
-// track, % used to the right (tone flips to warn/bad as the domain saturates).
-function DomainBars({ domains }) {
-  return (
-    <div className="domain-list">
-      {Object.entries(domains).map(([domain, d]) => {
-        const tone = d.used >= 0.85 ? 'bad' : d.used >= 0.6 ? 'warn' : ''
-        return (
-          <div className="domain-row" key={domain}>
-            <span className="domain-name">{domain}</span>
-            <div className="bar domain-bar">
-              <i style={{ width: `${Math.min(Math.max(d.used * 100, 1), 100)}%`, background: tone ? `var(--${tone})` : 'var(--teal)' }} />
-            </div>
-            <span className="right mono domain-nums">{d.pts}/{d.budget} · {pct(d.used, 1)}</span>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-function BtsPanel({ bts }) {
-  return (
-    <>
-      <BtsGauge bts={bts} />
-
-      <p className="eyebrow band">Scorecard characteristics (band · points / available)</p>
-      <div className="inset">
-        <CharRows characteristics={bts.characteristics} />
-      </div>
-
-      <p className="eyebrow band">Domain budgets used</p>
-      <div className="inset">
-        <DomainBars domains={bts.domains} />
-      </div>
-
-      <p className="eyebrow band">Poor-twin diagnostic (same file, bands floored at the poor mark)</p>
-      <p className="mono">poor twin {bts.poor_twin_bts} ({bts.poor_twin_tier}) — the gap proves
-        the card scores quality, not presence</p>
-
-      {bts.reasons?.length > 0 && (
-        <>
-          <p className="eyebrow band">How to improve this score</p>
-          <div className="inset mono">
-            {bts.reasons.map((rc) => (
-              <div key={rc.code} title={rc.language}>
-                {rc.code} · {rc.label}: {rc.action} ({rc.est_pts})
-              </div>
-            ))}
-          </div>
-        </>
       )}
-    </>
+    </div>
   )
 }

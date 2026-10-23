@@ -17,6 +17,12 @@ const json = async (r) => { if (!r.ok) throw new Error(await messageFrom(r)); re
 
 const getToken = () => localStorage.getItem('accessToken')
 
+// Auth header for fetch calls that bypass this module (multipart uploads in views).
+export const authHeaders = () => {
+  const token = getToken()
+  return token ? { 'Authorization': `Bearer ${token}` } : {}
+}
+
 const get = (u) => {
   const token = getToken()
   const headers = token ? { 'Authorization': `Bearer ${token}` } : {}
