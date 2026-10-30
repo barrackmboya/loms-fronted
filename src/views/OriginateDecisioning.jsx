@@ -11,7 +11,7 @@ const bandChipTone = (b) => (
 // (res) and the application form (for the demo-extracted facts) from the
 // container (Originate.jsx); onBook books the approved file and
 // onNewApplication starts a fresh application from here.
-export default function OriginateDecisioning({ res, form, income, kyc, crb, onBook, booked, busy, onNewApplication }) {
+export default function OriginateDecisioning({ res, form, income, kyc, crb, identityDoc, onBook, booked, busy, onNewApplication }) {
   const gates = Object.entries(res.gates || {})
   const declined = res.decision === 'DECLINE'
   const bts = res.scorecard?.bts  // both segments (decisioning mapper attaches the segment's BTSResult)
@@ -30,6 +30,8 @@ export default function OriginateDecisioning({ res, form, income, kyc, crb, onBo
         {income && <IncomePanel income={income} />}
 
         {kyc && <KycPanel kyc={kyc} />}
+
+        {identityDoc && <IdentityDocumentPanel identityDoc={identityDoc} />}
 
         {crb && <CrbPanel crb={crb} />}
 
@@ -252,6 +254,7 @@ function IncomePanel({ income }) {
             ['Verified monthly income (FCF proxy)', money(s.verified_income_monthly)],
             ['Income sources observed', s.income_sources ?? '—'],
             ['Salary-like inflow', s.salary_flag ? 'Yes' : 'No'],
+            ['Mobile number', s.mobile_number || '—'],
           ]} />
           <Rows rows={[
             ['Inflow stability', <Tag key="stab" tone={stabTone}>{s.income_stability || 'NO_DATA'}</Tag>],
@@ -262,17 +265,30 @@ function IncomePanel({ income }) {
           ]} />
         </div>
 
-        <p className="eyebrow band">Derived features (value · formula)</p>
+        <p className="eyebrow band">FCF values</p>
+        <div className="grid cols-2">
+          <Rows rows={[
+            ['Monthly FCF', money(feats.monthly_fcf?.value)],
+            ['Discounted FCF', money(feats.discounted_fcf?.value)],
+            ['Annual FCF', money(feats.annual_fcf?.value)],
+          ]} />
+          <Rows rows={[
+            ['Avg daily FCF', money(feats.avg_daily_fcf?.value)],
+            ['Adjusted daily FCF', money(feats.adjusted_daily_fcf?.value)],
+            ['Stable FCF', money(feats.stable_fcf?.value)],
+          ]} />
+        </div>
+
+        <p className="eyebrow band">Derived features</p>
         <table className="char-table">
           <thead>
-            <tr><th>Feature</th><th>Value</th><th className="right">Formula</th></tr>
+            <tr><th>Feature</th><th>Value</th></tr>
           </thead>
           <tbody>
             {Object.entries(feats).map(([name, f]) => (
               <tr key={name} title={f.rationale}>
                 <td className="mono">{prettify(name)}</td>
                 <td className="right mono">{money(f.value)}</td>
-                <td className="right mono" style={{ color: 'var(--muted)' }}>{f.formula}</td>
               </tr>
             ))}
           </tbody>
@@ -359,6 +375,49 @@ function CrbPanel({ crb }) {
           {complete
             ? 'Metro-Score and summary-row counts read from the report; the bureau rows above use these values.'
             : 'Score or summary counts missing — request a full CRB report before relying on the bureau rows.'}
+        </p>
+      </div>
+    </>
+  )
+}
+
+// Identity document extraction (national ID upload): the holder's structured
+// details — document number, name, DOB, expiry, sex, places of birth/issue —
+// each as {value, rationale} from identitydoc.py. Empty until an ID upload has
+// been analysed for the application.
+function IdentityDocumentPanel({ identityDoc }) {
+  if (!identityDoc) return null
+  const d = identityDoc.kyc_details || {}
+  const confTone = { HIGH: 'ok', MEDIUM: 'info', LOW: 'warn', NONE: 'muted' }[identityDoc.confidence] || 'muted'
+  const idNum = d.id_number || {}
+  const holder = d.holder_name || {}
+  const dob = d.date_of_birth || {}
+  const expiry = d.expiry_date || {}
+  const sex = d.sex || {}
+  const pob = d.place_of_birth || {}
+  const poi = d.place_of_issue || {}
+  return (
+    <>
+      <p className="eyebrow band">Identity document (national ID)</p>
+      <div className="inset">
+        <div className="grid cols-2">
+          <Rows rows={[
+            ['Identity document number', <span key="id" className="mono">{idNum.value || '—'}</span>],
+            ['Document holder', holder.value || '—'],
+            ['Date of birth', dob.value || '—'],
+            ['Expiry date', expiry.value || '—'],
+          ]} />
+          <Rows rows={[
+            ['Sex', sex.value || '—'],
+            ['Place of birth', pob.value || '—'],
+            ['Place of issue', poi.value || '—'],
+            ['Extraction confidence', <Tag key="conf" tone={confTone}>{identityDoc.confidence || 'NONE'}</Tag>],
+          ]} />
+        </div>
+        <p className="mono" style={{ color: 'var(--muted)', fontSize: 11.5, margin: '6px 0 0' }}>
+          {identityDoc.document
+            ? `${identityDoc.document.pages} page · ${identityDoc.document.strategy}`
+            : '—'}
         </p>
       </div>
     </>

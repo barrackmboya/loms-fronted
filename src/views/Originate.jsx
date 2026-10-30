@@ -51,7 +51,11 @@ const BLANK = {
 }
 
 const BLANK_DOC_SLOTS = () =>
-  Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', error: null }]))
+  Object.fromEntries(DOC_SLOTS.map((s) => [s.key, { file: null, idType: 'National ID', incomeType: 'M-Pesa statement', password: '', error: null }]))
+
+// The document slots' ingest + analysis no longer walks them one at a time:
+// uploads go out concurrently and the batch analyze endpoint extracts all
+// kinds on the backend at once, so no per-slot progress labels are needed.
 
 export default function Originate({ onBooked, userProfile }) {
   const [form, setForm] = useState(BLANK)
@@ -60,6 +64,10 @@ export default function Originate({ onBooked, userProfile }) {
   const [booked, setBooked] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  // Interactive loader state for the "Run decision" flow: percentage progress
+  // and the document currently being analysed.
+  const [progress, setProgress] = useState(0)
+  const [progressMessage, setProgressMessage] = useState('')
   const [metrics, setMetrics] = useState(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
   const [metricsError, setMetricsError] = useState(null)
@@ -81,6 +89,10 @@ export default function Originate({ onBooked, userProfile }) {
   // the IDENTITY slot's uploaded certificate (or OTHER when the ID slot holds an
   // image ID), so the decision record shows the certificate's PIN/name/address facts.
   const [kyc, setKyc] = useState(null)
+  // Identity document analysis (POST /api/applications/{id}/identity-document):
+  // fetched for the IDENTITY slot's uploaded ID (image or PDF), so the decision
+  // record shows the ID's holder facts.
+  const [identityDoc, setIdentityDoc] = useState(null)
   // CRB report extraction (POST /api/applications/{id}/crb-report): fetched for the
   // BUREAU_REPORT slot's uploaded report, so the decision record shows the real
   // Metro-Score / enquiries / bounced-cheques facts instead of the demo values.
@@ -130,9 +142,11 @@ export default function Originate({ onBooked, userProfile }) {
       return
     }
     setBusy(true); setBooked(null); setError(null)
+    setProgress(0); setProgressMessage('Starting decision…')
     try {
       if (existing && !form.party_id) {
         setError('Select a customer before running the decision.')
+        setBusy(false); setProgress(0); setProgressMessage('')
         return
       }
       // Document extraction (demo): the uploaded documents populate the KYC,
@@ -142,7 +156,7 @@ export default function Originate({ onBooked, userProfile }) {
       const attached = DOC_SLOTS.filter((s) => docSlots[s.key].file)
       for (const s of attached) {
         const err = validateSlot(s, docSlots[s.key])
-        if (err) { setSlot(s.key, { error: err }); return }
+        if (err) { setSlot(s.key, { error: err }); setBusy(false); setProgress(0); setProgressMessage(''); return }
       }
       if (attached.length && !existing) {
         setForm((f) => ({ ...f, ...Object.assign({}, ...attached.map((s) => DEMO_EXTRACTION[s.key])) }))
@@ -166,66 +180,96 @@ export default function Originate({ onBooked, userProfile }) {
         : (existing
             ? { ...rest, party_id }
             : { kyc_status, sanctions_hit, phone_verified, name, ...rest })
+      setProgress(12); setProgressMessage('Creating application…')
       const app = await api.createApplication(payload)
       setAppId(app.application_id)
       // Ingest the attached documents against the saved application, then decide.
+      // Progress is split across the fixed bookends (create + decide) and the two
+      // concurrent phases (parallel uploads, then the batch extraction call) so the
+      // percentage moves forward as the documents are analysed. A local counter is
+      // used (rather than React state) because state updates don't take effect
+      // within the same loop.
+      const slotWork = 60   // percent shared across the upload + extraction phases
+      let done = 12
       if (attached.length) {
         setDocBusy(true)
+        const uploadWork = Math.floor(slotWork / 2)
+        const analyzeWork = slotWork - uploadWork
+        // Phase 1 — ingest every slot's file against the application, all at once.
+        // An ingest failure is isolated to its own slot (allSettled) and never
+        // blocks the decision run.
+        setProgressMessage('Uploading documents…')
+        const bodyFor = (s) => {
+          const body = new FormData()
+          body.append('app_id', app.application_id)
+          body.append('doc_type', s.key)
+          const typePick = s.idTypeField ? docSlots[s.key].idType : (s.types ? docSlots[s.key].incomeType : null)
+          body.append('source', typePick ? `${typePick} (upload)` : 'upload')
+          body.append('file', docSlots[s.key].file)
+          // Encrypted M-Pesa statement PDFs need the password (usually the
+          // account holder's ID number); xlsx needs none.
+          if (s.key === 'INCOME' && docSlots[s.key].password)
+            body.append('password', docSlots[s.key].password)
+          return body
+        }
+        await Promise.allSettled(attached.map(async (s) => {
+          await fetch('/api/document-verification/documents/', { method: 'POST', body: bodyFor(s) })
+          // Nudge the bar once per completed upload (a third of the phase).
+          done = Math.min(12 + uploadWork, done + Math.floor(uploadWork / 3))
+          setProgress(done)
+        }))
+        // Phase 2 — analysis. One batch call runs every attached document's
+        // extraction concurrently on the backend (doc_pipeline's thread pool),
+        // replacing the sequential per-slot round-trips. Each kind's result lands
+        // in its own panel state; a failed/timeout kind just leaves its panel
+        // empty and never blocks the decision run.
+        const analysisBody = new FormData()
+        if (docSlots.INCOME?.file && /\.(xlsx?|pdf)$/i.test(docSlots.INCOME.file.name)) {
+          analysisBody.append('income', docSlots.INCOME.file)
+          if (docSlots.INCOME.password) analysisBody.append('income_password', docSlots.INCOME.password)
+        }
+        if (docSlots.IDENTITY?.file) {
+          analysisBody.append('identity', docSlots.IDENTITY.file)
+          // A PDF in the IDENTITY slot is also treated as the KRA PIN certificate.
+          if (/\.pdf$/i.test(docSlots.IDENTITY.file.name)) analysisBody.append('kra_pin', docSlots.IDENTITY.file)
+        }
+        if (docSlots.BUREAU_REPORT?.file && /\.pdf$/i.test(docSlots.BUREAU_REPORT.file.name)) {
+          analysisBody.append('crb', docSlots.BUREAU_REPORT.file)
+        }
+        setProgress(12 + uploadWork)
+        setProgressMessage('Analyzing documents…')
         try {
-          for (const s of attached) {
-            const body = new FormData()
-            body.append('app_id', app.application_id)
-            body.append('doc_type', s.key)
-            const typePick = s.idTypeField ? docSlots[s.key].idType : (s.types ? docSlots[s.key].incomeType : null)
-            body.append('source', typePick ? `${typePick} (upload)` : 'upload')
-            body.append('file', docSlots[s.key].file)
-            await fetch('/api/document-verification/documents/', { method: 'POST', body })
-            // An M-Pesa statement in the INCOME slot also runs through the income
-            // analysis engine; its failure never blocks the decision run.
-            if (s.key === 'INCOME' && /\.xlsx?$/i.test(docSlots[s.key].file.name)) {
-              try {
-                const incomeRes = await fetch(`/api/applications/${app.application_id}/income-analysis`, {
-                  method: 'POST', headers: authHeaders(), body,
-                })
-                if (incomeRes.ok) setIncome(await incomeRes.json())
-              } catch { /* the panel simply shows no income analysis */ }
-            }
-            // A PDF in the IDENTITY slot is treated as the KRA PIN certificate; its
-            // extraction, like the income analysis, never blocks the decision run.
-            if (s.key === 'IDENTITY' && /\.pdf$/i.test(docSlots[s.key].file.name)) {
-              try {
-                const kycRes = await fetch(`/api/applications/${app.application_id}/kra-pin`, {
-                  method: 'POST', headers: authHeaders(), body,
-                })
-                if (kycRes.ok) setKyc(await kycRes.json())
-              } catch { /* the panel simply shows no certificate extraction */ }
-            }
-            // A PDF in the BUREAU_REPORT slot runs through the CRB extractor; the
-            // extracted bureau fields replace the demo values in the form, and the
-            // failure of any of this never blocks the decision run.
-            if (s.key === 'BUREAU_REPORT' && /\.pdf$/i.test(docSlots[s.key].file.name)) {
-              try {
-                const crbRes = await fetch(`/api/applications/${app.application_id}/crb-report`, {
-                  method: 'POST', headers: authHeaders(), body,
-                })
-                if (crbRes.ok) {
-                  const crbJson = await crbRes.json()
-                  setCrb(crbJson)
-                  if (crbJson.fields) {
-                    setForm((f) => ({ ...f, ...crbJson.fields }))
-                  }
+          if ([...analysisBody.keys()].length) {
+            const batchRes = await fetch(`/api/applications/${app.application_id}/documents/analyze`, {
+              method: 'POST', headers: authHeaders(), body: analysisBody,
+            })
+            if (batchRes.ok) {
+              const batch = await batchRes.json()
+              for (const r of batch.results || []) {
+                if (r.status !== 'ok') continue   // panel simply shows no extraction for this kind
+                if (r.kind === 'income') setIncome(r.result)
+                else if (r.kind === 'kra_pin') setKyc(r.result)
+                else if (r.kind === 'identity') setIdentityDoc(r.result)
+                else if (r.kind === 'crb') {
+                  setCrb(r.result)
+                  // The extracted bureau fields replace the demo values in the form.
+                  if (r.result.fields) setForm((f) => ({ ...f, ...r.result.fields }))
                 }
-              } catch { /* the panel simply shows no bureau extraction */ }
+              }
             }
           }
-        } catch { /* ingest failures don't block the decision run */ }
+        } catch { /* analysis failures don't block the decision run */ }
+        done = Math.min(100, 12 + uploadWork + analyzeWork)
+        setProgress(done)
         setDocBusy(false)
       }
+      setProgress(Math.max(done, 80)); setProgressMessage('Finalising decision…')
       setResult(await api.decide(app.application_id))
+      setProgress(100); setProgressMessage('Decision complete')
       // The decision record page slides in as soon as the decision exists.
       setPage('decision')
       loadMetrics()
-    } catch (e) { setError(e.message) } finally { setBusy(false); setDocBusy(false) }
+    } catch (e) { setError(e.message) } finally { setBusy(false); setDocBusy(false); setProgress(0); setProgressMessage('') }
   }
 
   const book = async () => {
@@ -242,7 +286,7 @@ export default function Originate({ onBooked, userProfile }) {
   // record tab disappears until the next decision) and open a blank form.
   const startNewApplication = () => {
     setResult(null); setAppId(null); setBooked(null); setError(null)
-    setIncome(null); setKyc(null); setCrb(null)
+    setIncome(null); setKyc(null); setCrb(null); setIdentityDoc(null)
     resetForm()
     setExisting(false)
     setDocSlots(BLANK_DOC_SLOTS())
@@ -272,12 +316,13 @@ export default function Originate({ onBooked, userProfile }) {
           docSlots={docSlots} setSlot={setSlot}
           metrics={metrics} metricsLoading={metricsLoading} metricsError={metricsError}
           busy={busy || docBusy} error={error}
+          progress={progress} progressMessage={progressMessage}
           onDecide={decide}
         />
       ) : (
         // Keyed by appId so the slide-in plays again on every new decision.
         <div className="grid slide-in" key={appId}>
-          <OriginateDecisioning res={result} form={form} income={income} kyc={kyc} crb={crb}
+          <OriginateDecisioning res={result} form={form} income={income} kyc={kyc} crb={crb} identityDoc={identityDoc}
             onBook={book}
             booked={booked} busy={busy}
             onNewApplication={startNewApplication} />

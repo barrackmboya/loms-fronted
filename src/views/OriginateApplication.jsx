@@ -38,8 +38,8 @@ export const DOC_SLOTS = [
     icon: Banknote,
     idTypeField: false,
     types: ['M-Pesa statement', 'Bank statement'],
-    accept: '.pdf',
-    hint: 'Last 3 months of statements. PDF only, up to 12 MB.',
+    accept: '.pdf,.xlsx,.xls',
+    hint: 'Last 3 months of statements. PDF or Excel (.xlsx/.xls), up to 12 MB.',
   },
   {
     key: 'BUREAU_REPORT',
@@ -92,7 +92,8 @@ export const validateSlot = (slot, value) => {
 // is presentational and fires onDecide ("Run decision").
 export default function OriginateApplication({
   form, set, resetForm, existing, setExisting, parties, partySearch, setPartySearch,
-  docSlots, setSlot, metrics, metricsLoading, metricsError, busy, error, onDecide,
+  docSlots, setSlot, metrics, metricsLoading, metricsError, busy, error,
+  progress, progressMessage, onDecide,
 }) {
   return (
     <div className="panel">
@@ -190,6 +191,30 @@ export default function OriginateApplication({
       {metricsError && <p className="error">{metricsError}</p>}
       {metrics && <MetricsPanel metrics={metrics} />}
 
+      {busy && (
+        <div className="decide-modal">
+          <div className="decide-card">
+            <p className="decide-eyebrow">Credit decision engine</p>
+            <div className="decide-ring" style={{ '--p': Math.min(Math.max(progress, 0), 100) }}>
+              <div className="decide-ring-inner">
+                <div className="decide-pct">{Math.min(Math.max(progress, 0), 100)}<small>%</small></div>
+                <div className="decide-stage">Analysing</div>
+              </div>
+            </div>
+            <p className="decide-doc">{progressMessage}
+              <span className="decide-dots"><i /><i /><i /></span>
+            </p>
+            <div className="decide-ticker">
+              {[38, 62, 45, 80, 55, 92, 48, 70, 58, 85, 42, 66].map((h, i) => (
+                <i key={i} style={{ height: `${h}%` }} />
+              ))}
+            </div>
+            <div className="decide-bar">
+              <i style={{ width: `${Math.min(Math.max(progress, 0), 100)}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
       <p style={{ marginTop: 18 }}>
         <button className="btn" disabled={busy} onClick={onDecide}>
           <Fingerprint size={16} /> {busy ? 'Deciding…' : 'Run decision'}
@@ -257,6 +282,16 @@ function DocSlot({ slot, value, onChange }) {
           {value.file && <span className="note">{value.file.name} · {(value.file.size / 1024 / 1024).toFixed(2)} MB</span>}
         </div>
       </label>
+      {slot.key === 'INCOME' && /\.pdf$/i.test(value.file?.name || '') && (
+        <label style={{ display: 'block', marginTop: 8 }}>
+          <span className="note">PDF password (usually the account holder's ID number)</span>
+          <input
+            type="password"
+            value={value.password || ''}
+            onChange={(e) => onChange(slot.key, { ...value, password: e.target.value })}
+          />
+        </label>
+      )}
       {value.error && <p className="error" style={{ marginTop: 8 }}>{value.error}</p>}
     </div>
   )
