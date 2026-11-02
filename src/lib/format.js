@@ -6,3 +6,25 @@ export const stageTone = (s) => ({ 1: 'info', 2: 'warn', 3: 'bad' }[s] || 'info'
 export const decisionTone = (d) =>
   ({ APPROVE: 'ok', CONDITIONAL: 'warn', DECLINE: 'bad' }[d] || 'info')
 export const prettify = (s) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())
+
+/** Format ISO date string to "DD MMM YYYY" (e.g., "15 Jan 2024"). */
+export function formatDate(isoString) {
+  if (!isoString) return '—'
+  const date = new Date(isoString)
+  if (isNaN(date.getTime())) return '—'
+  return date.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
+/** Format number as currency (KES) with no decimals. */
+export function formatCurrency(amount) {
+  if (amount == null) return '—'
+  return new Intl.NumberFormat('en-KE', {
+    style: 'currency',
+    currency: 'KES',
+    maximumFractionDigits: 0,
+  }).format(amount)
+}

@@ -1,0 +1,115 @@
+/* Originate module — motion definitions and shared classes (Phase 1).
+   Colour/typography tokens are mapped in tailwind.config.js; this file only
+   defines motion and the shared classes named in ./lib/classes.js.
+
+   Rules (plan §6 Phase 9): every duration 100–250ms; reduced motion removes
+   transforms and keeps opacity. Row stagger fades rows only — no transform —
+   so the global reduced-motion animation kill-switch in index.css cannot
+   leave rows invisible. */
+
+@keyframes orig-row-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Fade-in for tab/panel content changes (200ms). */
+.orig-fade-in {
+  animation: orig-row-in 200ms ease-out;
+}
+
+/* Dialog open motion: scale from 0.98 with fade, 200ms. Applied via the
+   DIALOG_OPEN_MOTION constant on dialog content. */
+.orig-dialog-in {
+  animation: orig-dialog-in 200ms cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+@keyframes orig-dialog-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Row stagger: the first five rows fade in, 40ms per row; later rows and
+   re-renders show immediately. */
+.orig-row-stagger > * {
+  opacity: 0;
+  animation: orig-row-in 150ms ease-out forwards;
+}
+.orig-row-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.orig-row-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.orig-row-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.orig-row-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.orig-row-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.orig-row-stagger > *:nth-child(n + 6) {
+  opacity: 1;
+  animation: none;
+}
+
+/* Button hover lift: scale 1.02 plus shadow, 150ms. */
+.orig-btn-lift {
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.orig-btn-lift:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow: 0 4px 10px rgba(13, 31, 28, 0.14);
+}
+.orig-btn-lift:active:not(:disabled) {
+  transform: scale(1);
+}
+
+/* Underline-style tabs: 2px primary bottom border on the active tab, 200ms
+   transition. Works with shadcn Tabs triggers ([data-state=active]) and with
+   plain buttons carrying aria-selected. */
+.orig-underline-tabs {
+  border-bottom: 1px solid var(--line);
+}
+.orig-underline-tabs [role='tab'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 8px 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 200ms ease, border-color 200ms ease;
+}
+.orig-underline-tabs [role='tab']:hover {
+  color: var(--ink);
+}
+.orig-underline-tabs [role='tab'][data-state='active'],
+.orig-underline-tabs [role='tab'][aria-selected='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--teal);
+}
+.orig-underline-tabs [role='tab']:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+.orig-underline-tabs [role='tab']:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+/* Reduced motion: transforms off, opacity kept (global kill-switch in
+   index.css already stops the animations; these rules make the resting
+   state correct without them). */
+@media (prefers-reduced-motion: reduce) {
+  .orig-fade-in,
+  .orig-dialog-in,
+  .orig-row-stagger > * {
+    animation: none;
+  }
+  .orig-row-stagger > * {
+    opacity: 1;
+  }
+  .orig-dialog-in {
+    transform: none;
+  }
+  .orig-btn-lift,
+  .orig-btn-lift:hover:not(:disabled),
+  .orig-btn-lift:active:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+}

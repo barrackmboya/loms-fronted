@@ -6,6 +6,13 @@ export default defineConfig({
   server: {
     port: 5173,
     // Django serves the API; no CORS config needed on the backend.
-    proxy: { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true } },
+    // proxy: { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true } },
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: true
+        // no rewrite
+      }
+    }
   },
 })

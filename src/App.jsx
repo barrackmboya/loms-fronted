@@ -4,8 +4,11 @@ import {
   Landmark, LineChart, PhoneCall, Scale, BarChart2, LayoutDashboard, Clock, FileCheck2
 } from 'lucide-react'
 import { api } from './lib/api'
+import { Toaster } from './components/ui/sonner'
+import './features/originate/originate.css'
 import Dashboard from './views/Dashboard'
 import Originate from './views/Originate'
+import { OriginatePage } from './features/originate/OriginatePage'
 import Portfolio from './views/Portfolio'
 import Accounts from './views/Accounts'
 import Watchlist from './views/Watchlist'
@@ -257,6 +260,7 @@ export default function App() {
 
   return (
     <>
+      <Toaster />
       <header className="masthead">
         <h1>Credit Master</h1>
         <span className="sub">Origination · provisioning · monitoring · collections</span>
@@ -310,7 +314,7 @@ export default function App() {
           <main>
             {error && <p className="error">{error}</p>}
             {tab === 'dashboard' && userProfile.accessible_modules.includes('dashboard') && <Dashboard data={data.dashboard || data} userProfile={userProfile} />}
-            {tab === 'origination' && userProfile.accessible_modules.includes('origination') && <Originate onBooked={load} userProfile={userProfile} />}
+            {tab === 'origination' && userProfile.accessible_modules.includes('origination') && <OriginatePage key={userProfile?.id} userProfile={userProfile} />}
             {tab === 'portfolio' && userProfile.accessible_modules.includes('portfolio') && <Portfolio data={data.portfolio} userProfile={userProfile} />}
             {tab === 'accounts' && userProfile.accessible_modules.includes('accounts') && <Accounts rows={data.accounts} userProfile={userProfile} />}
             {tab === 'watchlist' && userProfile.accessible_modules.includes('watchlist') && <Watchlist rows={data.watchlist} userProfile={userProfile} />}

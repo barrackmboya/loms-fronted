@@ -4,7 +4,15 @@
    means two things at once.
    Flat surfaces carry navigation, tables and charts (clarity first);
    neumorphic surfaces carry secondary, advisory panels (fraud signals,
-   policy pack, model provenance) so they read as commentary, not record. */
+   policy pack, model provenance) so they read as commentary, not record.
+
+   Tailwind v3 (Originate module foundation, Phase 1) compiles through this
+   file. Its semantic tokens map onto the custom properties below via
+   tailwind.config.js — the hand-written tokens stay the source of truth. */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   --ink: #0d1f1c;
@@ -542,4 +550,85 @@ main .btn.ghost:hover:not(:disabled) {
   cursor: not-allowed;
   transform: none !important;
   opacity: 0.75;
+}
+
+/* ---------- sonner toasts (Originate module, Phase 1) ----------
+   Left-accent pattern: a 4px left border in the accent colour over an
+   8%-tinted surface, 8px radius, 12px 16px padding, Plex typography.
+   The Toaster mounts in App.jsx (top-right, richColors, closeButton,
+   max 3 visible, 4s auto-dismiss); the progress bar below mirrors the
+   4s duration in CSS. Accent per type: success --ok, error --bad,
+   warning --warn, info --teal (primary). */
+
+[data-sonner-toaster] {
+  --gap: 8px; /* stack gap between toasts */
+}
+
+[data-sonner-toast] {
+  position: relative;
+  border: 1px solid var(--line);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 12px 16px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--sans);
+  box-shadow: 0 8px 24px rgba(13, 31, 28, 0.12);
+  overflow: hidden;
+}
+[data-sonner-toast] [data-title] {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+[data-sonner-toast] [data-description] {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+[data-sonner-toast][data-type='success'] {
+  border-left-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
+}
+[data-sonner-toast][data-type='error'] {
+  border-left-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 8%, var(--panel));
+}
+[data-sonner-toast][data-type='warning'] {
+  border-left-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
+}
+[data-sonner-toast][data-type='info'] {
+  border-left-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 8%, var(--panel));
+}
+
+/* Auto-dismiss progress bar — 4s linear to match duration={4000}; paused
+   while the toast is hovered (sonner sets data-paused) or expanded. */
+@keyframes sonner-toast-progress {
+  from { width: 100%; }
+  to { width: 0; }
+}
+[data-sonner-toast]::after {
+  content: '';
+  position: absolute;
+  left: 4px; /* start after the accent border */
+  bottom: 0;
+  height: 2px;
+  width: calc(100% - 4px);
+  background: var(--teal);
+  animation: sonner-toast-progress 4s linear forwards;
+  pointer-events: none;
+}
+[data-sonner-toast][data-type='success']::after { background: var(--ok); }
+[data-sonner-toast][data-type='error']::after { background: var(--bad); }
+[data-sonner-toast][data-type='warning']::after { background: var(--warn); }
+[data-sonner-toast][data-type='info']::after { background: var(--teal); }
+[data-sonner-toast][data-paused='true']::after,
+[data-sonner-toast][data-expanded='true']::after {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast]::after { animation: none; width: 0; }
 }

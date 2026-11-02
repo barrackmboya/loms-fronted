@@ -41,9 +41,45 @@ const post = (u, body) => {
   }).then(json)
 }
 export const api = {
+  get,
   login: (credentials) => post('/api/auth/login/', credentials),
   refreshToken: (tokenData) => post('/api/auth/token/refresh/', tokenData),
   createApplication: (payload) => post('/api/applications', payload),
+  // --- Application record (OriginateDetail.jsx) ---------------------------
+  // GET /api/applications/<id>/ — the detail record; documents are embedded.
+  retrieveApplication: (id) => get(`/api/applications/${id}/`),
+  // The backend has no dedicated files endpoint — document rows ride on the
+  // application detail (DocumentSerializer: id, doc_type, sha256, tamper_score,
+  // metadata_anomaly, accepted). Return them so callers get an array.
+  applicationFiles: (id) => get(`/api/applications/${id}/`).then((a) => a.documents || []),
+  // GET /api/applications/<id>/decision — single DecisionRecord, or 409
+  // not_decided when none exists. OriginateDetail renders a list, so wrap a
+  // lone record; an application with no decision yet is an empty list, not an
+  // error (the 409 body is {"error": "No decision has been recorded…"}).
+  applicationDecisions: (id) =>
+    get(`/api/applications/${id}/decision`)
+      .then((r) => (Array.isArray(r) ? r : [r]))
+      .catch((e) => {
+        if (/no decision has been recorded/i.test(e.message)) return []
+        throw e
+      }),
+  // Fetch a document blob (authenticated) and return an object URL for
+  // <img src>. No blob endpoint exists yet; resolve null on failure so the
+  // caller can fall back to a file-type placeholder.
+  documentObjectUrl: async (file) => {
+    const docId = typeof file === 'object' && file !== null ? (file.doc_id ?? file.id) : file
+    const token = getToken()
+    try {
+      const r = await fetch(`/api/applications/documents/${docId}/file`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      })
+      if (!r.ok) return null
+      const blob = await r.blob()
+      return URL.createObjectURL(blob)
+    } catch {
+      return null
+    }
+  },
   parties: (search) => get(`/api/parties${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   decide: (id) => post(`/api/applications/${id}/decision`),
   book: (id) => post(`/api/applications/${id}/book`),
