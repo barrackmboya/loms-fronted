@@ -7,6 +7,7 @@ import { Skeleton } from '../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../components/ui/empty'
 import { Badge } from '../../components/ui/badge'
 import { SlidePanel } from './components/SlidePanel'
+import { Tooltip } from './components/Tooltip'
 import { ViewApplicationContent } from './components/ViewApplicationContent'
 import { useDebounce } from './hooks/useDebounce'
 import { formatDate, formatCurrency } from '../../lib/format'
@@ -401,20 +402,22 @@ export function ApplicationsTab({
               >
                 View Application
               </button>
-              <button
-                onClick={(e) => { e.stopPropagation(); handleRunDecision(app.id, app) }}
-                disabled={loading || running.has(app.id)}
-                className={`${BUTTON_HOVER_LIFT} btn border border-border bg-transparent text-foreground hover:bg-accent text-xs px-3 py-1.5 ${running.has(app.id) ? 'opacity-70 cursor-not-allowed' : ''}`}
-              >
-                {running.has(app.id) ? (
-                  <>
-                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                    Running…
-                  </>
-                ) : (
-                  'Run Decision'
-                )}
-              </button>
+              <Tooltip content="Run the credit decision for this application">
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleRunDecision(app.id, app) }}
+                  disabled={loading || running.has(app.id)}
+                  className={`${BUTTON_HOVER_LIFT} btn border border-border bg-transparent text-foreground hover:bg-accent text-xs px-3 py-1.5 ${running.has(app.id) ? 'opacity-70 cursor-not-allowed' : ''}`}
+                >
+                  {running.has(app.id) ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                      Running…
+                    </>
+                  ) : (
+                    'Run Decision'
+                  )}
+                </button>
+              </Tooltip>
             </div>
           </td>
         </tr>

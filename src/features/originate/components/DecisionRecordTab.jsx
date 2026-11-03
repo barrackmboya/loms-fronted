@@ -6,6 +6,7 @@ import { Skeleton } from '../../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../../components/ui/empty'
 import { Badge } from '../../../components/ui/badge'
 import { SlidePanel } from './SlidePanel'
+import { Tooltip } from './Tooltip'
 import { DecisionDetailContent } from './DecisionDetailContent'
 import { decisionStore } from '../lib/decisionStore'
 import { ROW_STAGGER, BUTTON_HOVER_LIFT } from '../lib/classes'
@@ -164,12 +165,14 @@ export function DecisionRecordTab() {
             {formatRunDate(r.runDate)}
           </td>
           <td className="px-3 py-2">
-            <button
-              onClick={(e) => { e.stopPropagation(); setViewRecord(r) }}
-              className={`${BUTTON_HOVER_LIFT} btn ghost text-xs`}
-            >
-              View Details
-            </button>
+            <Tooltip content="View the full decision output">
+              <button
+                onClick={(e) => { e.stopPropagation(); setViewRecord(r) }}
+                className={`${BUTTON_HOVER_LIFT} btn ghost text-xs`}
+              >
+                View Details
+              </button>
+            </Tooltip>
           </td>
         </tr>
       )})}

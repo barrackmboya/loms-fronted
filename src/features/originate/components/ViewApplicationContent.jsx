@@ -121,10 +121,10 @@ function Field({ icon: Icon, label, children, mono = false }) {
   return (
     <div className="flex min-w-0 items-start gap-2 text-[13px] leading-5">
       <Icon className={`${ICON} mt-[3px]`} />
-      <p className="min-w-0 break-words">
+      <div className={`min-w-0 break-words text-foreground ${mono ? 'font-mono' : ''}`}>
         <span className="font-semibold text-[var(--teal)]">{label}:</span>{' '}
-        <span className={`text-foreground ${mono ? 'font-mono' : ''}`}>{children}</span>
-      </p>
+        {children}
+      </div>
     </div>
   )
 }
