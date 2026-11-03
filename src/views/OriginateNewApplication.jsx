@@ -1,3 +1,5 @@
+// DEPRECATED: Replaced by features/originate/components/NewApplicationDialog.jsx
+// Remove after Phase 10 verification.
 import { useState, useEffect, useCallback } from 'react'
 import { FilePlus2, Gavel } from 'lucide-react'
 import { api, authHeaders } from '../lib/api'

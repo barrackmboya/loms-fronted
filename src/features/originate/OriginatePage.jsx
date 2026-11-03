@@ -1,7 +1,7 @@
 // Originate page shell — header, stat strip, tabs, content placeholders.
 // Phase 3: Page shell and stat strip only.
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useOriginateUrlState } from './hooks/useUrlState'
 import { useApplications } from './hooks/useApplications'
 import { useStats } from './hooks/useStats'
@@ -9,6 +9,8 @@ import { useProducts } from './hooks/useProducts'
 import { StatStrip } from './StatStrip'
 import { OriginateTabs } from './OriginateTabs'
 import { ApplicationsTab } from './ApplicationsTab'
+import { DecisionRecordTab } from './components/DecisionRecordTab'
+import NewApplicationDialog from './components/NewApplicationDialog'
 
 export function OriginatePage() {
   const [url, setUrl] = useOriginateUrlState()
@@ -33,6 +35,14 @@ export function OriginatePage() {
     product: url.product,
     sort: url.sort,
   })
+
+  // Dialog state for the New Application dialog
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  // Switch to the Decision Record tab after a successful run decision
+  const handleDecisionComplete = useCallback(() => {
+    setUrl({ tab: 'decisions' })
+  }, [setUrl])
 
   // Track programmatic URL updates to avoid sync loops
   const isSyncingUrlRef = useRef(false)
@@ -109,23 +119,22 @@ export function OriginatePage() {
                   refetch={refetch}
                   setUrlChannel={(channel) => setUrl({ channel }, { replace: false })}
                   products={products}
-                  onNewApplication={() => console.log('New Application clicked')}
+                  onNewApplication={() => setDialogOpen(true)}
+                  onDecisionComplete={handleDecisionComplete}
                 />
-                {/* Debug info */}
-                <details className="text-xs text-muted-foreground">
-                  <summary>Debug: URL state</summary>
-                  <pre>{JSON.stringify(url, null, 2)}</pre>
-                </details>
-                <details className="text-xs text-muted-foreground">
-                  <summary>Debug: Applications</summary>
-                  <pre>{JSON.stringify({ count: applications.length, pagination, filters, lastRawResponse }, null, 2)}</pre>
-                </details>
-              </div>
+                <NewApplicationDialog
+                  open={dialogOpen}
+                  onOpenChange={setDialogOpen}
+                  channel={filters.channel || 'APP'}
+                  onCreated={() => {
+                    goToPage(1)
+                  }}
+                />
+                </div>
+              )}
             )}
             {activeTab === 'decisions' && (
-              <div className="text-center py-12 text-muted-foreground">
-                Phase 8: Decision Record table
-              </div>
+              <DecisionRecordTab />
             )}
           </>
         )}

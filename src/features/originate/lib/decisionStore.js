@@ -36,9 +36,17 @@ export const decisionStore = {
     return [...decisions]
   },
 
-  /** Add a decision record, persist, and notify subscribers. */
+  /** Add a decision record, persist, and notify subscribers.
+   *  If a record for the same applicationId already exists, replace it
+   *  (running a decision twice shows only the latest result).
+   */
   add(record) {
-    decisions = [record, ...decisions] // newest first
+    const existing = decisions.findIndex((d) => d.applicationId === record.applicationId)
+    if (existing >= 0) {
+      decisions[existing] = record
+    } else {
+      decisions = [record, ...decisions] // newest first
+    }
     persist()
     notify()
   },

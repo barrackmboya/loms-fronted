@@ -6,9 +6,13 @@ import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, 
 import { Skeleton } from '../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../components/ui/empty'
 import { Badge } from '../../components/ui/badge'
+import { ViewApplicationDialog } from './components/ViewApplicationDialog'
 import { useDebounce } from './hooks/useDebounce'
 import { formatDate, formatCurrency } from '../../lib/format'
-import { ROW_STAGGER, UNDERLINE_TABS, FADE_IN, BUTTON_HOVER_LIFT } from './lib/classes'
+import { ROW_STAGGER, UNDERLINE_TABS, FADE_IN, BUTTON_HOVER_LIFT, ROW_FLASH_SUCCESS } from './lib/classes'
+import { api } from '../../lib/api'
+import { decisionStore } from './lib/decisionStore'
+import { toast } from 'sonner'
 
 const CHANNELS = [
   { key: 'APP', label: 'Mobile App' },
@@ -51,6 +55,7 @@ export function ApplicationsTab({
   setUrlChannel,
   products,
   onNewApplication,
+  onDecisionComplete,
 }) {
   const [localError, setLocalError] = useState(null)
   const [debouncedSearch, setDebouncedSearch] = useState(filters.search || '')
@@ -62,7 +67,11 @@ export function ApplicationsTab({
   // Guard against inconsistent state: API reports count > 0 but returns no data on page 1.
   // Auto-refetch (up to 3 times) with cache bypass to recover from transient empty-data responses.
   const [emptyRefetchAttempts, setEmptyRefetchAttempts] = useState(0)
-
+  // Track in-flight decision requests per application ID (per-row disable)
+  const [running, setRunning] = useState(new Set())
+  // ID of the application currently being viewed in the detail dialog
+  const [viewAppId, setViewAppId] = useState(null)
+  
   // Debounce search input (250ms)
   const debouncedSearchValue = useDebounce(debouncedSearch, 250)
 
@@ -144,6 +153,43 @@ export function ApplicationsTab({
     setLocalError(null)
     refetch()
   }, [refetch])
+
+  // Run decision for a single application — per-row in-flight tracking
+  const handleRunDecision = useCallback(async (id, app) => {
+    if (running.has(id)) return
+    setRunning((prev) => new Set([...prev, id]))
+    try {
+      const response = await api.decide(id)
+      toast.success("Decision completed successfully")
+      decisionStore.add({
+        id: response.decision_id,
+        applicationId: id,
+        applicantName: app.name,
+        channel: app.channel,
+        decision: response.decision,
+        grade: response.grade,
+        pd_12m: response.pd_12m,
+        runDate: response.as_of_ts,
+        fullResponse: response,
+      })
+      // Flash the row on success via DOM manipulation (inline style would
+      // override the CSS animation, so toggle the class directly on the node).
+      const row = document.querySelector(`tr[data-app-id="${id}"]`)
+      if (row) {
+        row.classList.add(ROW_FLASH_SUCCESS)
+        setTimeout(() => {
+          row.classList.remove(ROW_FLASH_SUCCESS)
+          onDecisionComplete?.()
+        }, 600)
+      } else {
+        onDecisionComplete?.()
+      }
+    } catch (e) {
+      toast.error("Decision failed", { description: e.message })
+    } finally {
+      setRunning((prev) => { const next = new Set(prev); next.delete(id); return next })
+    }
+  }, [onDecisionComplete])
 
   // Check if any filters are active (besides channel and default sort)
   const hasActiveFilters = useMemo(() => {
@@ -300,12 +346,33 @@ export function ApplicationsTab({
   // Render data rows
   const renderDataRows = () => (
     <tbody className={`${isInitialLoad ? ROW_STAGGER : ''}`} ref={tableBodyRef}>
-      {formattedApps.map((app, index) => (
-        <tr
-          key={app.id}
-          className="h-11 border-b border-border transition-colors"
-          style={{ backgroundColor: index % 2 === 1 ? 'rgb(238 241 238 / 0.3)' : 'transparent' }}
-        >
+      {formattedApps.map((app, index) => {
+        const selected = viewAppId === app.id
+        return (
+          <tr
+            key={app.id}
+            data-app-id={app.id}
+            className={`h-11 cursor-pointer ${index % 2 === 1 ? 'border-b bg-row-zebra' : ''} ${selected ? 'ring-1 ring-teal/50' : ''}`}
+            style={{
+              borderLeft: '3px solid transparent',
+              paddingLeft: 'calc(0.75rem - 3px)',
+              transition: 'all 200ms ease-out',
+              backgroundColor: selected ? 'rgba(23, 107, 99, 0.06)' : (index % 2 === 1 ? 'rgba(23, 107, 99, 0.035)' : 'transparent'),
+              borderBottom: index % 2 === 1 ? '1px solid rgba(211, 218, 212, 0.5)' : 'none',
+              borderLeftColor: selected ? 'var(--teal)' : 'transparent',
+            }}
+            onClick={() => setViewAppId(app.id)}
+            onMouseEnter={(e) => {
+              if (selected) return
+              e.currentTarget.style.backgroundColor = 'rgba(23, 107, 99, 0.08)'
+              e.currentTarget.style.borderLeftColor = 'var(--teal)'
+            }}
+            onMouseLeave={(e) => {
+              if (selected) return
+              e.currentTarget.style.backgroundColor = index % 2 === 1 ? 'rgba(23, 107, 99, 0.035)' : 'transparent'
+              e.currentTarget.style.borderLeftColor = 'transparent'
+            }}
+          >
           <td className="px-3 py-2 font-mono text-xs text-foreground">
             {app.formattedDate}
           </td>
@@ -324,23 +391,30 @@ export function ApplicationsTab({
           <td className="px-3 py-2">
             <div className="flex items-center justify-center gap-2">
               <button
-                onClick={() => console.log('View Application:', app.id)}
+                onClick={(e) => { e.stopPropagation(); setViewAppId(app.id) }}
                 className={`${BUTTON_HOVER_LIFT} btn ghost text-xs px-3 py-1.5`}
                 disabled={loading}
               >
                 View Application
               </button>
               <button
-                onClick={() => console.log('Run Decision:', app.id)}
-                className={`${BUTTON_HOVER_LIFT} btn border border-border bg-transparent text-foreground hover:bg-accent text-xs px-3 py-1.5`}
-                disabled={loading}
+                onClick={(e) => { e.stopPropagation(); handleRunDecision(app.id, app) }}
+                disabled={loading || running.has(app.id)}
+                className={`${BUTTON_HOVER_LIFT} btn border border-border bg-transparent text-foreground hover:bg-accent text-xs px-3 py-1.5 ${running.has(app.id) ? 'opacity-70 cursor-not-allowed' : ''}`}
               >
-                Run Decision
+                {running.has(app.id) ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                    Running…
+                  </>
+                ) : (
+                  'Run Decision'
+                )}
               </button>
             </div>
           </td>
         </tr>
-      ))}
+      )})}
     </tbody>
   )
 
@@ -553,23 +627,23 @@ export function ApplicationsTab({
         <div className="overflow-x-auto">
           <table className="w-full border-collapse" role="table">
             <thead>
-              <tr className="border-b border-border">
-                <th className="sticky top-0 z-10 bg-background px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <tr style={{ borderBottom: '2px solid var(--teal)' }}>
+                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Application Date
                 </th>
-                <th className="sticky top-0 z-10 bg-background px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Applicant Full Name
                 </th>
-                <th className="sticky top-0 z-10 bg-background px-3 py-2 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Product Name
                 </th>
-                <th className="sticky top-0 z-10 bg-background px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Amount Applied
                 </th>
-                <th className="sticky top-0 z-10 bg-background px-3 py-2 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Loan Term
                 </th>
-                <th className="sticky top-0 z-10 bg-background px-3 py-2 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Actions
                 </th>
               </tr>
@@ -590,6 +664,15 @@ export function ApplicationsTab({
         {renderPagination()}
       </div>
       </div>
+
+      {/* View Application dialog */}
+      {viewAppId !== null && (
+        <ViewApplicationDialog
+          open={true}
+          applicationId={viewAppId}
+          onOpenChange={(o) => { if (!o) setViewAppId(null) }}
+        />
+      )}
     </div>
   )
 }

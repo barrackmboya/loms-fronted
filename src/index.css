@@ -552,16 +552,9 @@ main .btn.ghost:hover:not(:disabled) {
   opacity: 0.75;
 }
 
-/* ---------- sonner toasts (Originate module, Phase 1) ----------
-   Left-accent pattern: a 4px left border in the accent colour over an
-   8%-tinted surface, 8px radius, 12px 16px padding, Plex typography.
-   The Toaster mounts in App.jsx (top-right, richColors, closeButton,
-   max 3 visible, 4s auto-dismiss); the progress bar below mirrors the
-   4s duration in CSS. Accent per type: success --ok, error --bad,
-   warning --warn, info --teal (primary). */
-
+/* ---------- sonner toasts ---------- */
 [data-sonner-toaster] {
-  --gap: 8px; /* stack gap between toasts */
+  --gap: 8px;
 }
 
 [data-sonner-toast] {
@@ -570,49 +563,59 @@ main .btn.ghost:hover:not(:disabled) {
   border-left-width: 4px;
   border-radius: 8px;
   padding: 12px 16px;
-  background: var(--panel);
+  background: var(--panel); /* pure white card body */
   color: var(--ink);
   font-family: var(--sans);
   box-shadow: 0 8px 24px rgba(13, 31, 28, 0.12);
   overflow: hidden;
+  animation: toast-enter 350ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
 }
+
 [data-sonner-toast] [data-title] {
   font-size: 14px;
   font-weight: 600;
   color: var(--ink);
 }
+
 [data-sonner-toast] [data-description] {
   font-size: 13px;
   color: var(--muted);
 }
 
-[data-sonner-toast][data-type='success'] {
-  border-left-color: var(--ok);
-  background: color-mix(in srgb, var(--ok) 8%, var(--panel));
-}
-[data-sonner-toast][data-type='error'] {
-  border-left-color: var(--bad);
-  background: color-mix(in srgb, var(--bad) 8%, var(--panel));
-}
-[data-sonner-toast][data-type='warning'] {
-  border-left-color: var(--warn);
-  background: color-mix(in srgb, var(--warn) 8%, var(--panel));
-}
-[data-sonner-toast][data-type='info'] {
-  border-left-color: var(--teal);
-  background: color-mix(in srgb, var(--teal) 8%, var(--panel));
+/* Six accent colours — more than 3 distinct tones */
+[data-sonner-toast][data-type='success'] { border-left-color: var(--ok); }
+[data-sonner-toast][data-type='error'] { border-left-color: var(--bad); }
+[data-sonner-toast][data-type='warning'] { border-left-color: var(--warn); }
+[data-sonner-toast][data-type='info'] { border-left-color: var(--teal); }
+[data-sonner-toast][data-type='brass'] { border-left-color: var(--brass); }
+[data-sonner-toast][data-type='neutral'] { border-left-color: var(--muted); }
+
+/* Custom entrance animation beyond sonner's default slide */
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Auto-dismiss progress bar — 4s linear to match duration={4000}; paused
-   while the toast is hovered (sonner sets data-paused) or expanded. */
+/* Custom exit animation beyond sonner's default slide */
+@keyframes toast-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(-10px) scale(0.95); }
+}
+
+[data-sonner-toast][data-removed='true'] {
+  animation: toast-exit 250ms ease-in forwards;
+}
+
+/* Auto-dismiss progress bar — 4s linear to match duration={4000} */
 @keyframes sonner-toast-progress {
   from { width: 100%; }
-  to { width: 0; }
+  to   { width: 0; }
 }
+
 [data-sonner-toast]::after {
   content: '';
   position: absolute;
-  left: 4px; /* start after the accent border */
+  left: 4px;
   bottom: 0;
   height: 2px;
   width: calc(100% - 4px);
@@ -620,15 +623,73 @@ main .btn.ghost:hover:not(:disabled) {
   animation: sonner-toast-progress 4s linear forwards;
   pointer-events: none;
 }
+
 [data-sonner-toast][data-type='success']::after { background: var(--ok); }
 [data-sonner-toast][data-type='error']::after { background: var(--bad); }
 [data-sonner-toast][data-type='warning']::after { background: var(--warn); }
 [data-sonner-toast][data-type='info']::after { background: var(--teal); }
+[data-sonner-toast][data-type='brass']::after { background: var(--brass); }
+[data-sonner-toast][data-type='neutral']::after { background: var(--muted); }
+
 [data-sonner-toast][data-paused='true']::after,
 [data-sonner-toast][data-expanded='true']::after {
   animation-play-state: paused;
 }
 
+/* Circular icon badge — pure white with accent-coloured border */
+[data-sonner-toast] [data-icon] {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 12px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+[data-sonner-toast][data-type='success'] [data-icon] { border-color: var(--ok); }
+[data-sonner-toast][data-type='error'] [data-icon] { border-color: var(--bad); }
+[data-sonner-toast][data-type='warning'] [data-icon] { border-color: var(--warn); }
+[data-sonner-toast][data-type='info'] [data-icon] { border-color: var(--teal); }
+[data-sonner-toast][data-type='brass'] [data-icon] { border-color: var(--brass); }
+[data-sonner-toast][data-type='neutral'] [data-icon] { border-color: var(--muted); }
+
+/* Icon SVG uses the accent colour */
+[data-sonner-toast][data-type='success'] [data-icon] svg { color: var(--ok); }
+[data-sonner-toast][data-type='error'] [data-icon] svg { color: var(--bad); }
+[data-sonner-toast][data-type='warning'] [data-icon] svg { color: var(--warn); }
+[data-sonner-toast][data-type='info'] [data-icon] svg { color: var(--teal); }
+[data-sonner-toast][data-type='brass'] [data-icon] svg { color: var(--brass); }
+[data-sonner-toast][data-type='neutral'] [data-icon] svg { color: var(--muted); }
+
+/* X close button as a small circle on the right */
+[data-sonner-toast] [data-close-button] {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  top: 8px !important;
+  transform: none !important;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: var(--panel);
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* Gap between icon and content */
+[data-sonner-toast] {
+  gap: 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  [data-sonner-toast] { animation: none; }
+  [data-sonner-toast][data-removed='true'] { animation: none; }
   [data-sonner-toast]::after { animation: none; width: 0; }
 }

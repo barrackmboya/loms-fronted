@@ -1,0 +1,71 @@
+[data-sonner-toast] {
+  background: #ffffff !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+  border-left: 4px solid #2f7a55 !important;
+  border-radius: 10px !important;
+  padding: 14px 16px !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08) !important;
+  max-width: 380px !important;
+  font-family: 'IBM Plex Sans', sans-serif !important;
+  gap: 12px !important;
+}
+
+[data-sonner-toast][data-type='success'] {
+  border-left-color: #2f7a55 !important;
+}
+[data-sonner-toast][data-type='warning'] {
+  border-left-color: #c08a1e !important;
+}
+[data-sonner-toast][data-type='error'] {
+  border-left-color: #9e2b2b !important;
+}
+
+[data-sonner-toast] [data-icon] {
+  width: 36px !important;
+  height: 36px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+}
+[data-sonner-toast][data-type='success'] [data-icon] {
+  background: rgba(47,122,85,0.1) !important;
+  color: #2f7a55 !important;
+}
+[data-sonner-toast][data-type='warning'] [data-icon] {
+  background: rgba(192,138,30,0.1) !important;
+  color: #c08a1e !important;
+}
+[data-sonner-toast][data-type='error'] [data-icon] {
+  background: rgba(158,43,43,0.1) !important;
+  color: #9e2b2b !important;
+}
+
+[data-sonner-toast] [data-title] {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: #0d1f1c !important;
+}
+[data-sonner-toast] [data-description] {
+  font-size: 13px !important;
+  font-weight: 400 !important;
+  color: #5d6b66 !important;
+  line-height: 1.4 !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 50% !important;
+  border: 1px solid rgba(0,0,0,0.06) !important;
+  background: #ffffff !important;
+  color: #5d6b66 !important;
+  top: 8px !important;
+  right: 8px !important;
+  transform: none !important;
+}
+[data-sonner-toast] [data-close-button]:hover {
+  border-color: #0d1f1c !important;
+  color: #0d1f1c !important;
+}

@@ -6,6 +6,7 @@ import {
 import { api } from './lib/api'
 import { Toaster } from './components/ui/sonner'
 import './features/originate/originate.css'
+import './styles/toast.css'
 import Dashboard from './views/Dashboard'
 import Originate from './views/Originate'
 import { OriginatePage } from './features/originate/OriginatePage'

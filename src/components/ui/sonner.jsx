@@ -7,8 +7,8 @@ import { Toaster as Sonner } from 'sonner'
 export function Toaster(props) {
   return (
     <Sonner
-      position="top-right"
-      richColors
+      position="center"
+      richColors={false}
       closeButton
       visibleToasts={3}
       duration={4000}

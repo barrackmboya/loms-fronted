@@ -55,6 +55,24 @@
   transform: scale(1);
 }
 
+/* Row flash on successful decision: green tint fade-out over 600ms. */
+.row-flash-success {
+  animation: rowFlash 600ms ease-out;
+}
+@keyframes rowFlash {
+  0% { background-color: rgba(47, 122, 85, 0.12); }
+  100% { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .row-flash-success { animation: none; }
+}
+
+/* Zebra striping for table rows — a CSS class (not inline style) so the
+   row-flash-success animation can override background-color. */
+.bg-row-zebra {
+  background-color: rgba(23, 107, 99, 0.035);
+}
+
 /* Underline-style tabs: 2px primary bottom border on the active tab, 200ms
    transition. Works with shadcn Tabs triggers ([data-state=active]) and with
    plain buttons carrying aria-selected. */

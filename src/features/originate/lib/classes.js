@@ -16,3 +16,6 @@ export const ROW_STAGGER = 'orig-row-stagger'
 
 /** Plain 200ms fade-in for tab/panel content changes. */
 export const FADE_IN = 'orig-fade-in'
+
+/** Row flash on successful decision: green tint fade-out, 600ms. */
+export const ROW_FLASH_SUCCESS = 'row-flash-success'
