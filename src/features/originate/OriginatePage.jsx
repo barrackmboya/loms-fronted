@@ -132,7 +132,7 @@ export function OriginatePage() {
                 />
                 </div>
               )}
-            )}
+            
             {activeTab === 'decisions' && (
               <DecisionRecordTab />
             )}
