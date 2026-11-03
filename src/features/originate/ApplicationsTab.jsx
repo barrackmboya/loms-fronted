@@ -6,7 +6,8 @@ import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, 
 import { Skeleton } from '../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../components/ui/empty'
 import { Badge } from '../../components/ui/badge'
-import { ViewApplicationDialog } from './components/ViewApplicationDialog'
+import { SlidePanel } from './components/SlidePanel'
+import { ViewApplicationContent } from './components/ViewApplicationContent'
 import { useDebounce } from './hooks/useDebounce'
 import { formatDate, formatCurrency } from '../../lib/format'
 import { ROW_STAGGER, UNDERLINE_TABS, FADE_IN, BUTTON_HOVER_LIFT, ROW_FLASH_SUCCESS } from './lib/classes'
@@ -219,6 +220,9 @@ export function ApplicationsTab({
   }), [])
 
   const formattedApps = useMemo(() => applications.map(formatApplication), [applications, formatApplication])
+
+  // Application currently open in the View Application slide-in panel.
+  const selectedApp = useMemo(() => formattedApps.find((app) => app.id === viewAppId), [formattedApps, viewAppId])
 
   // Render skeleton rows
   const renderSkeletonRows = () => (
@@ -665,13 +669,16 @@ export function ApplicationsTab({
       </div>
       </div>
 
-      {/* View Application dialog */}
+      {/* View Application slide-in panel */}
       {viewAppId !== null && (
-        <ViewApplicationDialog
-          open={true}
-          applicationId={viewAppId}
-          onOpenChange={(o) => { if (!o) setViewAppId(null) }}
-        />
+        <SlidePanel
+          open={viewAppId !== null}
+          onClose={() => setViewAppId(null)}
+          title={selectedApp?.name}
+          subtitle={`#${viewAppId}`}
+        >
+          <ViewApplicationContent applicationId={viewAppId} />
+        </SlidePanel>
       )}
     </div>
   )

@@ -5,7 +5,8 @@ import { FileText } from 'lucide-react'
 import { Skeleton } from '../../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../../components/ui/empty'
 import { Badge } from '../../../components/ui/badge'
-import { DecisionDetailDialog } from './DecisionDetailDialog'
+import { SlidePanel } from './SlidePanel'
+import { DecisionDetailContent } from './DecisionDetailContent'
 import { decisionStore } from '../lib/decisionStore'
 import { ROW_STAGGER, BUTTON_HOVER_LIFT } from '../lib/classes'
 
@@ -45,7 +46,7 @@ const GLASS_STYLE = {
 
 export function DecisionRecordTab() {
   const [records, setRecords] = useState(() => decisionStore.list())
-  const [detailRecord, setDetailRecord] = useState(null)
+  const [viewRecord, setViewRecord] = useState(null)
 
   useEffect(() => {
     const unsubscribe = decisionStore.subscribe(() => {
@@ -111,7 +112,7 @@ export function DecisionRecordTab() {
   const renderDataRows = () => (
     <tbody>
       {records.map((r, index) => {
-        const selected = detailRecord?.id === r.id
+        const selected = viewRecord?.id === r.id
         return (
           <tr
             key={r.id}
@@ -124,7 +125,7 @@ export function DecisionRecordTab() {
               borderBottom: index % 2 === 1 ? '1px solid rgba(211, 218, 212, 0.5)' : 'none',
               borderLeftColor: selected ? 'var(--teal)' : 'transparent',
             }}
-            onClick={() => setDetailRecord(r)}
+            onClick={() => setViewRecord(r)}
             onMouseEnter={(e) => {
               if (selected) return
               e.currentTarget.style.backgroundColor = 'rgba(23, 107, 99, 0.08)'
@@ -164,7 +165,7 @@ export function DecisionRecordTab() {
           </td>
           <td className="px-3 py-2">
             <button
-              onClick={(e) => { e.stopPropagation(); setDetailRecord(r) }}
+              onClick={(e) => { e.stopPropagation(); setViewRecord(r) }}
               className={`${BUTTON_HOVER_LIFT} btn ghost text-xs`}
             >
               View Details
@@ -236,13 +237,16 @@ export function DecisionRecordTab() {
         </div>
       </div>
 
-      {/* Decision Detail dialog */}
-      {detailRecord && (
-        <DecisionDetailDialog
-          open={true}
-          onOpenChange={(o) => { if (!o) setDetailRecord(null) }}
-          record={detailRecord}
-        />
+      {/* Decision Detail slide-in panel */}
+      {viewRecord !== null && (
+        <SlidePanel
+          open={viewRecord !== null}
+          onClose={() => setViewRecord(null)}
+          title={`Decision — #${viewRecord.applicationId}`}
+          subtitle={viewRecord.applicantName}
+        >
+          <DecisionDetailContent record={viewRecord} />
+        </SlidePanel>
       )}
     </div>
   )
