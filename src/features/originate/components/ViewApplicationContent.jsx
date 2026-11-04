@@ -9,6 +9,7 @@ import {
   ZoomIn, ZoomOut, ExternalLink, Briefcase, Wallet, Loader2,
 } from 'lucide-react'
 import { Badge } from '../../../components/ui/badge'
+import { MapPanel } from '../../../components/MapPanel'
 import { api } from '../../../lib/api'
 import { toast } from 'sonner'
 
@@ -213,32 +214,6 @@ function DocumentsViewer({ docs }) {
   )
 }
 
-/* ------------------------------ map mock ------------------------------ */
-function MapMock({ label }) {
-  return (
-    <div className="relative h-[340px] w-full overflow-hidden rounded-md border border-border bg-accent">
-      {/* faux blocks */}
-      <div className="absolute inset-0 opacity-60"
-        style={{ backgroundImage: 'linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)', backgroundSize: '56px 56px' }} />
-      <div className="absolute left-[44%] top-0 h-full w-3 -skew-x-6 bg-[var(--warn,#c08a1e)]/30" />
-      <span className="absolute left-[46%] top-1/2 -rotate-90 text-[10px] text-muted">Muriami Street</span>
-      <div className="absolute left-[54%] top-[34%] h-28 w-36 rounded-sm border border-[var(--warn,#c08a1e)]/40 bg-[var(--warn,#c08a1e)]/15" />
-      <div className="absolute left-[62%] top-[40%] flex -translate-x-1/2 flex-col items-center">
-        <span className="mb-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] text-foreground">{label}</span>
-        <MapPin className="h-6 w-6 fill-[var(--teal)] text-[var(--teal)]" />
-        <span className="text-[10px] text-destructive">{label}</span>
-      </div>
-      <div className="absolute left-2 top-2 flex flex-col overflow-hidden rounded-md border border-border bg-background text-[14px] text-foreground">
-        <span className="px-2 py-1">+</span><span className="border-t border-border px-2 py-1">−</span>
-      </div>
-      <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground">
-        <MapIcon className="h-3 w-3" /> Satellite
-      </span>
-      <span className="absolute bottom-1 right-2 text-[10px] text-muted">© OpenStreetMap</span>
-    </div>
-  )
-}
-
 /* ----------------------------- panel body ----------------------------- */
 export function ViewApplicationContent({ applicationId }) {
   const { report, loan, personal: p, contact: c, employment: e } = DATA
@@ -320,7 +295,7 @@ export function ViewApplicationContent({ applicationId }) {
         </Card>
 
         {/* Row: Personal | Contact */}
-        <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
           {/* 1. PERSONAL DETAILS */}
           <Card>
             <SectionTitle n={1}>Personal Details</SectionTitle>
@@ -349,10 +324,6 @@ export function ViewApplicationContent({ applicationId }) {
 
             <Divider />
             <DocumentsViewer docs={DATA.documents} />
-
-            <span className="mt-4 inline-flex items-center gap-1 rounded-full border border-border bg-accent px-2.5 py-1 text-[11px] font-medium uppercase text-[var(--teal)]">
-              <CircleCheck className="h-3 w-3" /> Verified
-            </span>
           </Card>
 
           {/* 2. CONTACT INFORMATION */}
@@ -390,7 +361,9 @@ export function ViewApplicationContent({ applicationId }) {
             <div className="mt-4 flex items-center gap-1.5 text-[13px] text-foreground">
               <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> {c.mapLabel}
             </div>
-            <div className="mt-2"><MapMock label={c.mapLabel} /></div>
+            <div className="mt-2">
+              <MapPanel center={[-1.2833, 36.8180]} zoom={15} label={c.mapLabel} />
+            </div>
           </Card>
         </div>
 
