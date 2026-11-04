@@ -124,20 +124,21 @@ export function OriginatePage() {
         onChannelChange={handleChannelChange}
         collapsed={collapsed}
         onToggleCollapsed={handleToggleCollapsed}
-        style={{ position: 'fixed', top: 0, left: 0,maxHeight: '50vh', height: '50vh', zIndex: -1000 }}
+      
       />
 
       {/* Content area — right of rail, single scroll container */}
-      <div className={`originate-content ${collapsed ? 'is-collapsed' : ''}`}>
+      <div className={`originate-content ${collapsed ? 'is-collapsed' : ''}`} 
+      style={{ overflowY: 'auto',backdropFilter: 'blur(8px)', backgroundColor: 'rgba(255, 255, 255, 0.92)' }}>
         {/* Page header — directly on content background */}
-        {/* <header className="space-y-1 mb-8">
+        <header className="space-y-1 mb-8">
           <h1 className="text-[28px] font-semibold tracking-tight text-foreground font-sans">
-            Originate
+            Originatation 
           </h1>
-          <p className="text-sm text-muted-foreground font-sans">
+          {/* <p className="text-sm text-muted-foreground font-sans">
             All applications across channels
-          </p>
-        </header> */}
+          </p> */}
+        </header>
 
         {/* Stat strip */}
         <StatStrip stats={stats} loading={appsLoading} />
