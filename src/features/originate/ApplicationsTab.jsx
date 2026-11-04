@@ -1,5 +1,6 @@
-// Applications tab — channel sub-tabs, toolbar, table, pagination.
+// Applications tab — toolbar, table, pagination.
 // Phase 4: Applications table.
+// Channel navigation moved to NavRail.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, FileText } from 'lucide-react'
@@ -11,16 +12,10 @@ import { Tooltip } from './components/Tooltip'
 import { ViewApplicationContent } from './components/ViewApplicationContent'
 import { useDebounce } from './hooks/useDebounce'
 import { formatDate, formatCurrency } from '../../lib/format'
-import { ROW_STAGGER, UNDERLINE_TABS, FADE_IN, BUTTON_HOVER_LIFT, ROW_FLASH_SUCCESS } from './lib/classes'
+import { ROW_STAGGER, FADE_IN, BUTTON_HOVER_LIFT, ROW_FLASH_SUCCESS } from './lib/classes'
 import { api } from '../../lib/api'
 import { decisionStore } from './lib/decisionStore'
 import { toast } from 'sonner'
-
-const CHANNELS = [
-  { key: 'APP', label: 'Mobile App' },
-  { key: 'WEB', label: 'Web' },
-  { key: 'BRANCH', label: 'Branch' },
-]
 
 const SORT_OPTIONS = [
   { value: '-created_at', label: 'Application Date (newest)' },
@@ -33,17 +28,6 @@ const SORT_OPTIONS = [
 
 const PAGE_SIZE = 20
 
-// Glassmorphism container for the applications table area (toolbar + table + pagination).
-const GLASS_STYLE = {
-  background: 'rgba(255, 255, 255, 0.72)',
-  backdropFilter: 'blur(12px)',
-  WebkitBackdropFilter: 'blur(12px)',
-  border: '1px solid rgba(255, 255, 255, 0.4)',
-  borderRadius: '12px',
-  boxShadow: '0 4px 24px rgba(0, 0, 0, 0.06)',
-  padding: '24px',
-}
-
 export function ApplicationsTab({
   applications,
   loading,
@@ -54,7 +38,6 @@ export function ApplicationsTab({
   clearFilters,
   goToPage,
   refetch,
-  setUrlChannel,
   products,
   onNewApplication,
   onDecisionComplete,
@@ -459,31 +442,11 @@ export function ApplicationsTab({
 
   return (
     <div className="space-y-4">
-      {/* Channel sub-tabs */}
-      <div className={UNDERLINE_TABS} role="tablist" aria-label="Channel">
-        {CHANNELS.map((channel) => (
-          <button
-            key={channel.key}
-            role="tab"
-            aria-selected={filters.channel === channel.key}
-            onClick={() => {
-              setFilter('channel', channel.key)
-              setUrlChannel?.(channel.key)
-              // Reset search debounce when channel changes
-              setDebouncedSearch('')
-            }}
-            className="px-3 py-2 text-sm font-medium transition-all duration-200 ease-out"
-          >
-            {channel.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Sticky toolbar + table wrapped in glassmorphism container */}
-      <div style={GLASS_STYLE} className="space-y-4">
-        {/* Sticky toolbar */}
-        <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border p-4 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
+      {/* Floating card — toolbar + table + pagination */}
+      <div className="orig-float-card space-y-4">
+        {/* Toolbar */}
+        <div className="border-b border-border p-4 space-y-4">
+          <div className="flex flex-col sm:flex-row gap-4 items-stretch sm:items-center">
           {/* Search input */}
           <div className="relative flex-1 min-w-0 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -628,29 +591,29 @@ export function ApplicationsTab({
           </div>
         )}
       </div>
+      </div>
 
       {/* Table */}
-      <div className="rounded-card border border-border overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse" role="table">
+      <div className="rounded-card border border-border">
+        <table className="w-full border-collapse" role="table">
             <thead>
               <tr style={{ borderBottom: '2px solid var(--teal)' }}>
-                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Application Date
                 </th>
-                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Applicant Full Name
                 </th>
-                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Product Name
                 </th>
-                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Amount Applied
                 </th>
-                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Loan Term
                 </th>
-                <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Actions
                 </th>
               </tr>
@@ -665,12 +628,10 @@ export function ApplicationsTab({
               )
             )}
           </table>
-        </div>
 
-        {/* Pagination */}
-        {renderPagination()}
-      </div>
-      </div>
+          {/* Pagination */}
+          {renderPagination()}
+        </div>
 
       {/* View Application slide-in panel */}
       {viewAppId !== null && (

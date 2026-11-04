@@ -131,3 +131,370 @@
     transform: none;
   }
 }
+
+/* =========================================================
+   Originate left nav rail + content column
+   Dark teal rail (#1a3a35) with light teal accent (#4fd1c5).
+   The rail is fixed; the content column to its right is the
+   only scroll container.
+   ========================================================= */
+
+/* Rail color tokens — the ONLY new palette additions. */
+.originate-shell {
+  --orig-teal-dark: #1a3a35;
+  --orig-accent: #4fd1c5;
+  --orig-content-bg: #f0f4f3;
+}
+
+/* Full-bleed: spans the viewport regardless of <main>'s max-width/padding. */
+.originate-shell {
+  width: 100vw;
+  margin-left: calc((100vw - 100%) / -2);
+}
+
+/* Fixed dark teal rail. No right border — contrast vs content is the separator.
+   Height capped at 50vh, vertically centered; min-height guarantees
+   all items plus the collapse toggle fit. */
+.orig-rail {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  transform: translateY(-40%);
+  height: auto;
+  max-height: 50vh;
+  min-height: 620px;
+  width: 220px;
+  background: var(--orig-teal-dark);
+  padding: 10px 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  transition: width 200ms ease-out;
+}
+.orig-rail.is-collapsed {
+  width: 64px;
+}
+
+.orig-rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Sub-items sit directly beneath their parent with the same gutter. */
+.orig-rail-subgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  margin-left: 4px;
+}
+
+/* Base item pill — icon over centered label on dark teal. */
+.orig-rail-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 12px 8px 12px;
+  border: 0;
+  background: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--sans);
+  text-align: center;
+  cursor: pointer;
+  transition: background 150ms ease-out;
+  padding: 10px 16px;
+}
+.orig-rail-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Top-level items — no extra indent. */
+.orig-rail-item.is-top {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px 16px;
+}
+
+/* Sub-items channel filters — icon beside name, side by side, indented under parent for tree hierarchy. */
+.orig-rail-item.is-sub {
+  font-size: 13px;
+  font-weight: 400;
+  flex-direction: row;
+  justify-content: flex-start;
+  padding: 8px 12px 8px 40px;
+  gap: 12px;
+  opacity: 0.9;
+}
+.orig-rail-item.is-sub .orig-rail-label {
+  text-align: left;
+  white-space: nowrap;
+}
+
+/* Icons: 18px above the label. */
+.orig-rail-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #ffffff;
+}
+.orig-rail-item.is-sub .orig-rail-icon {
+  color: rgba(255, 255, 255, 0.6);
+}
+.orig-rail-item.is-active .orig-rail-icon {
+  color: currentColor;
+}
+
+/* Label centered under the icon, may wrap to multiple lines. */
+.orig-rail-label {
+  text-align: center;
+  white-space: normal;
+  line-height: 1.2;
+}
+
+/* Active top-level: soft white fill, bold white text. */
+.orig-rail-item.is-top.is-active {
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* Active sub-item: faint white fill, light teal text. */
+.orig-rail-item.is-sub.is-active {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--orig-accent);
+  font-weight: 500;
+}
+
+/* Small dot indicator at the right edge of the active item. */
+.orig-rail-dot {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--orig-accent);
+  pointer-events: none;
+}
+.orig-rail-item.is-active {
+  padding-right: 28px; /* leave room for the dot so text doesn't run under it */
+}
+
+/* Collapse/expand toggle at the bottom of the rail. */
+.orig-rail-toggle {
+  margin-top: auto;
+  align-self: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 0;
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 150ms ease-out;
+}
+.orig-rail-toggle:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.orig-rail-toggle-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.orig-rail-item:focus-visible,
+.orig-rail-toggle:focus-visible {
+  outline: 2px solid var(--orig-accent);
+  outline-offset: -2px;
+}
+
+/* Collapsed: icons only, centered; no labels, no sub-items. */
+.orig-rail.is-collapsed .orig-rail-label {
+  display: none;
+}
+.orig-rail.is-collapsed .orig-rail-subgroup {
+  display: none;
+}
+.orig-rail.is-collapsed .orig-rail-item {
+  justify-content: center;
+  padding: 12px 0;
+}
+.orig-rail.is-collapsed .orig-rail-item.is-sub {
+  display: none;
+}
+.orig-rail.is-collapsed .orig-rail-item.is-top.is-active {
+  padding-left: 0;
+}
+
+/* Content area — the ONLY scroll container. */
+.originate-content {
+  margin-left: 240px;
+  height: 100vh;
+  overflow-y: auto;
+  background: var(--orig-content-bg);
+  padding: 32px;
+  transition: margin-left 200ms ease-out;
+}
+.originate-content.is-collapsed {
+  margin-left: 64px;
+}
+
+/* Floating panels — solid white cards on the light content background.
+   NO backdrop-filter, NO translucency. */
+.orig-float-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+/* Stat strip cards — individual white cards, 12px radius, same shadow. */
+.orig-stat-card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  padding: 16px;
+}
+
+/* ---------- Tree navigation ---------- */
+.orig-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.orig-tree-node {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 0;
+  background: none;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  font-family: var(--sans);
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease-out, color 150ms ease-out;
+}
+.orig-tree-node:hover { background: rgba(255, 255, 255, 0.06); }
+.orig-tree-node:focus-visible {
+  outline: 2px solid var(--orig-accent);
+  outline-offset: -2px;
+}
+
+.orig-tree-icon { width: 18px; height: 18px; flex-shrink: 0; }
+.orig-tree-label { flex: 1; line-height: 1.2; white-space: nowrap; }
+
+/* Parent rows */
+.orig-tree-node.is-parent {
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+.orig-tree-node.is-parent.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 600;
+}
+.orig-tree-chevron {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transform: rotate(-90deg);
+  transition: transform 150ms ease-out;
+}
+.orig-tree-chevron.is-open { transform: rotate(0deg); }
+
+/* Collapsible panel (height animates via grid rows) */
+.orig-tree-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 200ms ease-out;
+}
+.orig-tree-panel.is-open { grid-template-rows: 1fr; }
+.orig-tree-panel > .orig-tree-children { overflow: hidden; min-height: 0; }
+
+/* Children with connector lines */
+.orig-tree-children {
+  list-style: none;
+  margin: 0 0 0 22px;      /* aligns trunk under the parent icon centre */
+  padding: 0;
+}
+.orig-tree-leaf { position: relative; padding-left: 18px; }
+
+/* vertical trunk */
+.orig-tree-leaf::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+}
+.orig-tree-leaf:first-child::before { top: 4px; }
+/* last child: trunk stops at the elbow */
+.orig-tree-leaf:last-child::before { bottom: 50%; }
+/* horizontal elbow */
+.orig-tree-leaf::after {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  width: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.orig-tree-node.is-child {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 400;
+  margin: 2px 0;
+}
+.orig-tree-node.is-child .orig-tree-icon {
+  width: 16px; height: 16px;
+  color: rgba(255, 255, 255, 0.55);
+}
+.orig-tree-node.is-child.is-active {
+  background: rgba(79, 209, 197, 0.12);
+  color: var(--orig-accent);
+  font-weight: 500;
+}
+.orig-tree-node.is-child.is-active .orig-tree-icon { color: var(--orig-accent); }
+
+/* Accent bar on the active child (replaces the old dot) */
+.orig-tree-node.is-child.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 6px; bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--orig-accent);
+}
+
+/* ---------- Collapsed rail: parent icons only ---------- */
+.orig-rail.is-collapsed .orig-tree { padding: 0 10px; }
+.orig-rail.is-collapsed .orig-tree-node.is-parent {
+  justify-content: center;
+  padding: 12px 0;
+}
+.orig-rail.is-collapsed .orig-tree-label,
+.orig-rail.is-collapsed .orig-tree-chevron,
+.orig-rail.is-collapsed .orig-tree-panel { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .orig-tree-panel, .orig-tree-chevron, .orig-tree-node { transition: none; }
+}

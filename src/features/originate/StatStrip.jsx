@@ -12,11 +12,11 @@ export function StatStrip({ stats, loading }) {
   ]
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
       {cards.map((card) => (
         <div
           key={card.key}
-          className="rounded-card border border-border bg-card p-6"
+          className="orig-stat-card"
         >
           {loading ? (
             <Skeleton className="h-8 w-24" />

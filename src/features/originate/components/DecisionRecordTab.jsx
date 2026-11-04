@@ -34,17 +34,6 @@ const formatRunDate = (iso) => {
   })
 }
 
-// Glassmorphism container for the decisions table area.
-const GLASS_STYLE = {
-  background: 'rgba(255, 255, 255, 0.72)',
-  backdropFilter: 'blur(12px)',
-  WebkitBackdropFilter: 'blur(12px)',
-  border: '1px solid rgba(255, 255, 255, 0.4)',
-  borderRadius: '12px',
-  boxShadow: '0 4px 24px rgba(0, 0, 0, 0.06)',
-  padding: '24px',
-}
-
 export function DecisionRecordTab() {
   const [records, setRecords] = useState(() => decisionStore.list())
   const [viewRecord, setViewRecord] = useState(null)
@@ -198,42 +187,40 @@ export function DecisionRecordTab() {
 
   return (
     <div className="space-y-4">
-      <div style={GLASS_STYLE} className="space-y-4">
+      <div className="orig-float-card space-y-4">
         {/* Table */}
-        <div className="rounded-card border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse" role="table">
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--teal)' }}>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Application ID
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Applicant Name
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Channel
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Decision
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Grade
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    PD 12M
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Run Date
-                  </th>
-                  <th style={{ backgroundColor: 'rgba(23, 107, 99, 0.05)' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              {isEmpty ? renderEmptyState() : renderDataRows()}
-            </table>
-          </div>
+        <div className="rounded-card border border-border">
+          <table className="w-full border-collapse" role="table">
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--teal)' }}>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Application ID
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Applicant Name
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Channel
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Decision
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Grade
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  PD 12M
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Run Date
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            {isEmpty ? renderEmptyState() : renderDataRows()}
+          </table>
 
           {/* Pagination */}
           {renderPagination()}
