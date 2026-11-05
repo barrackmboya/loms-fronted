@@ -1,7 +1,9 @@
 // NavRail — hierarchical tree navigation for the Originate page.
 // Two expandable groups (Applications, Decisions), each with the same three
 // channel children. Active leaf = activeTab === group && activeChannel === channel.
-// Collapse/expand of the whole rail is controlled by the parent.
+// Collapse/expand of the whole rail is now self-managed: it starts collapsed,
+// expands on hover, and can be pinned open with the bottom toggle. `collapsed`
+// and `onToggleCollapsed` are kept for API compatibility with the parent shell.
 
 import { useEffect, useState } from 'react'
 import {
@@ -25,20 +27,38 @@ export function NavRail({
   activeChannel,
   onTabChange,
   onChannelChange,
-  collapsed,
-  onToggleCollapsed,
+  collapsed,      // kept: parent-controlled collapsed default (persisted localStorage)
+  onToggleCollapsed, // kept: parent toggle callback
 }) {
   const [open, setOpen] = useState({ applications: true, decisions: false })
+  const [expanded, setExpanded] = useState(false)   // false = collapsed on mount
+  const [pinned, setPinned] = useState(false)       // manually pinned open
 
   // Keep the group containing the active tab open.
   useEffect(() => {
     setOpen((o) => (o[activeTab] ? o : { ...o, [activeTab]: true }))
   }, [activeTab])
 
+  const handleMouseEnter = () => {
+    if (!pinned) setExpanded(true)
+  }
+
+  const handleMouseLeave = () => {
+    if (!pinned) setExpanded(false)
+  }
+
+  const handleTogglePinned = () => {
+    setPinned((prev) => {
+      const next = !prev
+      if (next) setExpanded(true)
+      return next
+    })
+  }
+
   const handleGroup = (key) => {
-    if (collapsed) {
-      // Icon-only rail: clicking a group expands the rail and opens it.
-      onToggleCollapsed()
+    if (!expanded) {
+      // Collapsed rail: clicking a group expands the rail and opens it.
+      setExpanded(true)
       setOpen((o) => ({ ...o, [key]: true }))
       if (activeTab !== key) onTabChange(key)
       return
@@ -56,16 +76,20 @@ export function NavRail({
     onChannelChange(channel)
   }
 
+  const isCollapsed = !expanded
+
   return (
     <aside
-      className={`orig-rail ${collapsed ? 'is-collapsed' : ''}`}
+      className={`orig-rail ${isCollapsed ? 'is-collapsed' : ''} ${pinned ? 'is-pinned' : ''}`}
       role="navigation"
       aria-label="Originate navigation"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <ul className="orig-tree">
         {TREE.map(({ key, label, icon: Icon, children }) => {
           const isGroupActive = activeTab === key
-          const isOpen = !collapsed && open[key]
+          const isOpen = !isCollapsed && open[key]
           const panelId = `orig-tree-${key}`
 
           return (
@@ -76,7 +100,7 @@ export function NavRail({
                 onClick={() => handleGroup(key)}
                 aria-expanded={isOpen}
                 aria-controls={panelId}
-                title={collapsed ? label : undefined}
+                title={isCollapsed ? label : undefined}
               >
                 <Icon className="orig-tree-icon" aria-hidden="true" />
                 <span className="orig-tree-label">{label}</span>
@@ -115,14 +139,15 @@ export function NavRail({
 
       <button
         type="button"
-        className="orig-rail-toggle"
-        onClick={onToggleCollapsed}
-        aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
-        aria-expanded={!collapsed}
+        className={`orig-rail-toggle ${pinned ? 'is-pinned' : ''}`}
+        onClick={handleTogglePinned}
+        aria-label={pinned ? 'Unpin navigation' : 'Pin navigation'}
+        aria-expanded={expanded}
+        aria-pressed={pinned}
       >
-        {collapsed
-          ? <ChevronRight className="orig-rail-toggle-icon" aria-hidden="true" />
-          : <ChevronLeft className="orig-rail-toggle-icon" aria-hidden="true" />}
+        {expanded
+          ? <ChevronLeft className="orig-rail-toggle-icon" aria-hidden="true" />
+          : <ChevronRight className="orig-rail-toggle-icon" aria-hidden="true" />}
       </button>
     </aside>
   )
