@@ -21,7 +21,21 @@ export default function OriginateDecisioning({ res, form, income, kyc, crb, iden
       <div className="panel">
         <h2>Decision</h2>
         <p style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
-          <Tag tone={decisionTone(res.decision)}>{res.decision}</Tag>
+          {res.decision === 'APPROVE' ? (
+            <img
+              src='/assets/stamps/approved.svg'
+              alt='Approved stamp'
+              style={{ width: 84, height: 84, objectFit: 'contain' }}
+            />
+          ) : res.decision === 'DECLINE' ? (
+            <img
+              src='/assets/stamps/rejected.svg'
+              alt='Declined stamp'
+              style={{ width: 84, height: 84, objectFit: 'contain' }}
+            />
+          ) : (
+            <Tag tone={decisionTone(res.decision)}>{res.decision}</Tag>
+          )}
           <span className="mono">grade {res.grade} · 12-month PD {pct(res.pd_12m, 2)}</span>
         </p>
 
