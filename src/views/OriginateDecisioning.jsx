@@ -1,5 +1,6 @@
 import { CheckCircle2, XCircle, ShieldAlert, FilePlus2 } from 'lucide-react'
-import { decisionTone, money, pct, prettify } from '../lib/format'
+import { DecisionCard } from '../features/originate/components/DecisionCard'
+import { money, pct, prettify } from '../lib/format'
 import { Meter, Rows, Tag } from '../components'
 
 const bandChipTone = (b) => (
@@ -20,24 +21,7 @@ export default function OriginateDecisioning({ res, form, income, kyc, crb, iden
     <>
       <div className="panel">
         <h2>Decision</h2>
-        <p style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 6px' }}>
-          {res.decision === 'APPROVE' ? (
-            <img
-              src='/assets/stamps/approved.svg'
-              alt='Approved stamp'
-              style={{ width: 84, height: 84, objectFit: 'contain' }}
-            />
-          ) : res.decision === 'DECLINE' ? (
-            <img
-              src='/assets/stamps/rejected.svg'
-              alt='Declined stamp'
-              style={{ width: 84, height: 84, objectFit: 'contain' }}
-            />
-          ) : (
-            <Tag tone={decisionTone(res.decision)}>{res.decision}</Tag>
-          )}
-          <span className="mono">grade {res.grade} · 12-month PD {pct(res.pd_12m, 2)}</span>
-        </p>
+        <DecisionCard decision={res.decision} grade={res.grade} pd_12m={res.pd_12m} />
 
         {bts && <BtsPanel bts={bts} />}
 

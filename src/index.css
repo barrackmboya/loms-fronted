@@ -10,6 +10,8 @@
    file. Its semantic tokens map onto the custom properties below via
    tailwind.config.js — the hand-written tokens stay the source of truth. */
 
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
