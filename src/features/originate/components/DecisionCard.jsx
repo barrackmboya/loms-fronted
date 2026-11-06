@@ -3,7 +3,7 @@ import { pct } from '../../../lib/format'
 export function DecisionCard({ decision, grade, pd_12m }) {
   const pdPct = pd_12m == null ? 0 : pd_12m * 100
   const stampSrc =
-    decision === 'APPROVE' ? '/assets/stamps/approved.svg' : '/assets/stamps/rejected.svg'
+    decision === 'APPROVE' ? '/assets/stamps/approved.svg' : '/assets/stamps/declined.svg'
   const decisionColor = decision === 'APPROVE' ? '#16a34a' : '#dc2626'
   const pdColor =
     pd_12m == null
@@ -43,29 +43,42 @@ export function DecisionCard({ decision, grade, pd_12m }) {
               color: '#666',
               textTransform: 'uppercase',
               letterSpacing: '1px',
-              // borderBottom: '2px solid #333',
+              // borderBottom: '2px solid #333',,
               paddingBottom: 6,
               marginBottom: 12,
             }}
           >
             Decision
           </div>
-          {(decision === 'APPROVE' || decision === 'DECLINE') && (
+          {/* {(decision === 'APPROVE' || decision === 'DECLINE') && (
             <img
               src={stampSrc}
               alt={decision}
-              style={{ width: 80, height: 80, objectFit: 'contain' }}
+              style={{ width: 56, height: 56, objectFit: 'contain' }}
             />
-          )}
-          <div
+          )} */}
+
+          {/* ===================== */}
+
+           <div
             style={{
-              fontSize: 14,
-              fontWeight: 600,
-              color: decisionColor,
-              marginTop: 8,
+              fontFamily: "'Special Elite', cursive",
+              fontSize: 20,
+              fontWeight: 700,
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              color: '#dc2626',
+              border: '3px solid #dc2626',
+              borderRadius: 2,
+              padding: '6px 16px',
+              transform: 'rotate(-2deg)',
+              textShadow: '0 0 1px rgba(220,38,38,0.4)',
+              boxShadow: 'inset 0 0 4px rgba(220,38,38,0.15)',
+              display: 'inline-block',
             }}
           >
-            {/* {decision} */}
+        {/* ============== */}
+            {decision}
           </div>
         </div>
 
@@ -86,14 +99,14 @@ export function DecisionCard({ decision, grade, pd_12m }) {
               color: '#666',
               textTransform: 'uppercase',
               letterSpacing: '1px',
-              // borderBottom: '2px solid #333',
+              // borderBottom: '2px solid #333',,
               paddingBottom: 6,
               marginBottom: 12,
             }}
           >
             Grade
           </div>
-          <div
+          {/* <div
             style={{
               fontFamily: "'Special Elite', cursive",
               fontSize: 20,
@@ -109,6 +122,16 @@ export function DecisionCard({ decision, grade, pd_12m }) {
               boxShadow: 'inset 0 0 4px rgba(220,38,38,0.15)',
               display: 'inline-block',
             }}
+          > */}
+            <div
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: decisionColor,
+              textTransform: 'uppercase',
+              
+              marginTop: 8,
+            }}
           >
             {grade}
           </div>
@@ -123,7 +146,7 @@ export function DecisionCard({ decision, grade, pd_12m }) {
               color: '#666',
               textTransform: 'uppercase',
               letterSpacing: '1px',
-              // borderBottom: '2px solid #333',
+            //borderBottom: '2px solid #333',,
               paddingBottom: 6,
               marginBottom: 12,
             }}
@@ -156,8 +179,8 @@ export function DecisionCard({ decision, grade, pd_12m }) {
                 position: 'absolute',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                left: 10,
-                right: 10,
+                left: 12,
+                right: 12,
                 height: 4,
                 background: '#555',
                 borderRadius: 2,
@@ -168,7 +191,7 @@ export function DecisionCard({ decision, grade, pd_12m }) {
                 position: 'absolute',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                left: 10,
+                left: 12,
                 height: 4,
                 width: `${pdPct}%`,
                 background: '#ff6b00',
@@ -181,7 +204,7 @@ export function DecisionCard({ decision, grade, pd_12m }) {
                 position: 'absolute',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                left: `calc(10px + ${pdPct}% - 5px)`,
+                left: `calc(12px + ${pdPct}% * 0.96 - 5px)`,
                 width: 10,
                 height: 28,
                 background: 'linear-gradient(90deg,#e8e8e8,#999)',
@@ -192,9 +215,9 @@ export function DecisionCard({ decision, grade, pd_12m }) {
             <div
               style={{
                 position: 'absolute',
-                bottom: -18,
-                left: 10,
-                right: 10,
+                bottom: -10,
+                left: 12,
+                right: 12,
                 height: 16,
               }}
             >
@@ -220,7 +243,7 @@ export function DecisionCard({ decision, grade, pd_12m }) {
                   style={{
                     position: 'absolute',
                     left: `${pos}%`,
-                    bottom: -30,
+                    bottom: -20,
                     fontSize: 9,
                     color: '#666',
                     transform: 'translateX(-50%)',
