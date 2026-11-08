@@ -38,7 +38,8 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #root { height: 100%; }
+html, body, #root { height: 100%; overflow: hidden; }
+#root { display: flex; flex-direction: column; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.55 var(--sans); }
 h1, h2, h3 { margin: 0; }
 button { font: inherit; }

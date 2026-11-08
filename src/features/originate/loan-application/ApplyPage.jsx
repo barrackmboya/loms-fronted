@@ -8,12 +8,14 @@ import { useLoanApplication } from './hooks/useLoanApplication'
 import { PersonalInfoStep } from './steps/PersonalInfo'
 import { LoanDetailsStep } from './steps/LoanDetails'
 import { DocumentsStep } from './steps/Documents'
+import { AddressStep } from './steps/AddressStep'
 import { ReviewStep } from './steps/Review'
 
 const STEPS = [
   { key: 'personal', label: 'Personal Info' },
   { key: 'loan', label: 'Loan Details' },
   { key: 'documents', label: 'Documents' },
+  { key: 'address', label: 'Address' },
   { key: 'review', label: 'Review & Submit' },
 ]
 
@@ -29,6 +31,18 @@ const INITIAL_FORM = {
   id_photo_front: null,
   payslip: null,
   bank_statement: null,
+  address: {
+    county: null,
+    subcounty: null,
+    ward: null,
+    neighborhood: null,
+    street: null,
+    landmark: null,
+    lat: null,
+    lng: null,
+    plot_number: '',
+    postal_code: '',
+  },
 }
 
 export function ApplyPage({ onBack }) {

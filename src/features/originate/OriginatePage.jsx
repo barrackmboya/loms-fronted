@@ -12,7 +12,6 @@ import { DecisionRecordTab } from './components/DecisionRecordTab'
 import NewApplicationDialog from './components/NewApplicationDialog'
 import { NavRail } from './components/NavRail'
 import { FADE_IN } from './lib/classes'
-import { ApplyPage } from './loan-application'
 
 export function OriginatePage() {
   const [url, setUrl] = useOriginateUrlState()
@@ -68,6 +67,17 @@ export function OriginatePage() {
 
   // Dialog state for the New Application dialog
   const [dialogOpen, setDialogOpen] = useState(false)
+
+  // Sync dialog open state with URL action param
+  useEffect(() => {
+    setDialogOpen(action === 'apply')
+  }, [action])
+
+  // Close dialog and clear the action URL param
+  const handleDialogClose = useCallback(() => {
+    setDialogOpen(false)
+    setUrl({ action: undefined })
+  }, [setUrl])
 
   // Switch to the Decision Record tab after a successful run decision
   const handleDecisionComplete = useCallback(() => {
@@ -147,40 +157,35 @@ export function OriginatePage() {
 
         {/* Tab content — fade in on change */}
         <div className={FADE_IN}>
-          {action === 'apply' ? (
-            <ApplyPage onBack={() => setUrl({ action: undefined })} />
-          ) : (
-            <>
-              {activeTab === 'applications' && (
-                <ApplicationsTab
-                  applications={applications}
-                  loading={appsLoading}
-                  error={appsError}
-                  pagination={pagination}
-                  filters={filters}
-                  setFilter={setFilter}
-                  clearFilters={clearFilters}
-                  goToPage={goToPage}
-                  refetch={refetch}
-                  products={products}
-                  onNewApplication={() => setUrl({ action: 'apply' })}
-                  onDecisionComplete={handleDecisionComplete}
-                />
-              )}
+          {activeTab === 'applications' && (
+            <ApplicationsTab
+              applications={applications}
+              loading={appsLoading}
+              error={appsError}
+              pagination={pagination}
+              filters={filters}
+              setFilter={setFilter}
+              clearFilters={clearFilters}
+              goToPage={goToPage}
+              refetch={refetch}
+              products={products}
+              onNewApplication={() => setUrl({ action: 'apply' })}
+              onDecisionComplete={handleDecisionComplete}
+            />
+          )}
 
-              {activeTab === 'decisions' && (
-                <DecisionRecordTab />
-              )}
-            </>
+          {activeTab === 'decisions' && (
+            <DecisionRecordTab />
           )}
         </div>
 
-        {/* New Application dialog */}
+        {/* New Application slide panel */}
         <NewApplicationDialog
           open={dialogOpen}
-          onOpenChange={setDialogOpen}
+          onOpenChange={handleDialogClose}
           channel={filters.channel || 'APP'}
           onCreated={() => {
+            setUrl({ action: undefined })
             goToPage(1)
           }}
         />

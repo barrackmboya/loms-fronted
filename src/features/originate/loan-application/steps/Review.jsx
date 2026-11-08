@@ -60,6 +60,42 @@ export function ReviewStep({ formData }) {
         </ul>
       </div>
 
+      <div className="bg-accent/40 p-3 rounded-lg border border-border">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Address</div>
+        <div className="text-sm text-foreground space-y-1">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">County</span>
+            <span>{formData.address?.county?.name || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Sub-County</span>
+            <span>{formData.address?.subcounty?.name || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Ward</span>
+            <span>{formData.address?.ward?.name || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Neighborhood</span>
+            <span>{formData.address?.neighborhood?.name || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Street / Landmark</span>
+            <span>
+              {formData.address?.street?.name || formData.address?.landmark?.name || '—'}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Plot Number</span>
+            <span>{formData.address?.plot_number || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Postal Code</span>
+            <span>{formData.address?.postal_code || '—'}</span>
+          </div>
+        </div>
+      </div>
+
       <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
         <p className="text-sm text-amber-800">
           Review your details carefully before submitting. Once submitted, the application will be

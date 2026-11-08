@@ -172,7 +172,7 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </header>
-            <div className="slide-panel-body min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+            <div className="slide-panel-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-5">{children}</div>
           </div>
         </>
       )}
@@ -212,6 +212,7 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
           box-shadow: -4px 0 24px rgba(0, 0, 0, 0.1);
           display: flex;
           flex-direction: column;
+          overflow: hidden;
           transform: translateX(100%);
           transition: transform 280ms ease-out;
         }
@@ -255,6 +256,8 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
 
         /* Single internal scrollbar for the panel body content. */
         .slide-panel-body {
+          overflow-x: hidden;
+          overflow-y: auto;
           scrollbar-width: thin;
           scrollbar-color: var(--teal) transparent;
         }

@@ -98,6 +98,9 @@ function mapFormToPayload(formData) {
 
   const payload = {}
 
+  // Channel
+  if (formData.channel) payload.channel = formData.channel
+
   // Identity / personal
   if (formData.nationalId) payload.id_number = formData.nationalId
   if (formData.firstName) payload.first_name = formData.firstName
@@ -118,6 +121,22 @@ function mapFormToPayload(formData) {
     if (a.landmark_school) payload.landmark_school = a.landmark_school
     if (a.landmark_health) payload.landmark_health = a.landmark_health
     if (a.landmark_church) payload.landmark_church = a.landmark_church
+  } else if (formData.address) {
+    const a = formData.address
+    if (a.county) payload.county = a.county.name ?? a.county
+    if (a.subcounty) payload.sub_county = a.subcounty.name ?? a.subcounty
+    if (a.ward) payload.ward = a.ward.name ?? a.ward
+    if (a.neighborhood) payload.estate_or_neighborhood = a.neighborhood.name ?? a.neighborhood
+    if (a.street) payload.street_or_road_name = a.street.name ?? a.street
+    if (a.landmark) {
+      const lm = a.landmark
+      const lmName = lm.name ?? lm
+      if (lm.type === 'health_center') payload.landmark_health = lmName
+      else if (lm.type === 'school') payload.landmark_school = lmName
+      else if (lm.type === 'market') payload.landmark_church = lmName // closest available field
+    }
+    if (a.plot_number) payload.unit_or_house_number = a.plot_number
+    if (a.postal_code) payload.postal_code = a.postal_code
   } else {
     // Flat fallback keys
     if (formData.building_or_premise) payload.building_or_premise = formData.building_or_premise
