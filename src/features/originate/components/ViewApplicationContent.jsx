@@ -233,18 +233,10 @@ export function ViewApplicationContent({ applicationId }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <style>{`
-        .kyc-scroll::-webkit-scrollbar { width: 8px; }
-        .kyc-scroll::-webkit-scrollbar-track { background: transparent; }
-        .kyc-scroll::-webkit-scrollbar-thumb { background-color: var(--teal); border-radius: 4px; }
-      `}</style>
-
-      {/* Scrolling body */}
-      <div
-        className="kyc-scroll min-h-0 flex-1 space-y-4 overflow-y-auto bg-accent/40 p-5"
-        style={{ scrollbarColor: 'var(--teal) transparent', scrollbarWidth: 'thin' }}
-      >
+    <div>
+      {/* Body scrolls inside the slide panel (SlidePanel body, overflow-y-auto).
+         This stays out of the way — no nested scroller here. */}
+      <div className="space-y-4 bg-accent/40">
         {/* Report header */}
         <Card>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -302,7 +294,7 @@ export function ViewApplicationContent({ applicationId }) {
 
             <div className="mb-5 flex flex-col items-center gap-1">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-sm border-2 border-[var(--teal)]/30 bg-accent">
-                {p.photo
+                {p.photo && !String(p.photo).startsWith('file://')
                   ? <img src={p.photo} alt="Passport Photo" className="h-full w-full object-cover" />
                   : <User className="h-14 w-14 text-muted-foreground" />}
               </div>

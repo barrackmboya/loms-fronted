@@ -128,8 +128,8 @@ export function OriginatePage() {
       />
 
       {/* Content area — right of rail, single scroll container */}
-      <div className={`originate-content ${collapsed ? 'is-collapsed' : ''}`} 
-      style={{ overflowY: 'auto',backdropFilter: 'blur(8px)', backgroundColor: 'rgba(255, 255, 255, 0.92)' }}>
+      <div className={`originate-content ${collapsed ? 'is-collapsed' : ''}`}
+      style={{ overflowY: 'auto', backgroundColor: 'rgba(255, 255, 255, 0.92)' }}>
         {/* Page header — directly on content background */}
         <header className="space-y-1 mb-8">
           <h1 className="text-[28px] font-semibold tracking-tight text-foreground font-sans">

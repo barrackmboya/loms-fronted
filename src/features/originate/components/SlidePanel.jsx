@@ -18,11 +18,17 @@ const PANEL_Z_INDEX = 110
 const PANEL_WIDTH = 520
 const SMALL_VIEWPORT_MAX = 639 // below 640px viewport: 100vw
 const EXIT_MS = 220
+// Selectors of the app's top nav bar (masthead + module tabs). The panel sits
+// below it so the nav bar stays fully visible and is never covered by the panel.
+const NAV_BAR_SELECTORS = ['.masthead', '.tabs']
 
 export function SlidePanel({ open, onClose, title, subtitle, children }) {
   const [isMounted, setIsMounted] = useState(false)
   const [hasEntered, setHasEntered] = useState(false)
   const [isExiting, setIsExiting] = useState(false)
+  // Height of the top nav bar; the panel top starts right below it and stays
+  // fixed there while the page content scrolls behind it.
+  const [navBarHeight, setNavBarHeight] = useState(0)
   const panelRef = useRef(null)
   const exitTimer = useRef(null)
 
@@ -40,6 +46,22 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
       document.body.style.overflow = ''
     }
   }, [open])
+
+  // Measure the nav bar (masthead + tabs) so the panel top starts right below
+  // it. Re-measure on resize — the masthead can wrap to a second line.
+  useEffect(() => {
+    const measure = () => {
+      let height = 0
+      for (const sel of NAV_BAR_SELECTORS) {
+        const el = document.querySelector(sel)
+        if (el) height += el.offsetHeight
+      }
+      setNavBarHeight(height)
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
 
   // Mount on open, animate in with CSS; on close run the exit animation,
   // then unmount and hand back to the parent.
@@ -123,7 +145,7 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
             className="slide-panel-backdrop"
             data-state={panelState}
             onClick={onClose}
-            style={{ zIndex: BACKDROP_Z_INDEX }}
+            style={{ zIndex: BACKDROP_Z_INDEX, top: navBarHeight, bottom: 0, left: 0, right: 0 }}
           />
           <div
             ref={panelRef}
@@ -132,7 +154,7 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
             aria-label={title || 'Application details'}
             data-state={panelState}
             className="slide-panel"
-            style={{ zIndex: PANEL_Z_INDEX }}
+            style={{ zIndex: PANEL_Z_INDEX, top: navBarHeight, bottom: 0 }}
           >
             <header className="slide-panel-header sticky top-0 z-20 shrink-0 flex items-center justify-between gap-2 border-b border-border p-4 backdrop-blur-sm bg-[rgba(255,255,255,0.9)]">
               <div className="flex flex-col gap-0.5">
@@ -150,14 +172,15 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
                 <X className="h-4 w-4" aria-hidden="true" />
               </button>
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+            <div className="slide-panel-body min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
           </div>
         </>
       )}
       <style>{`
         .slide-panel-backdrop {
           position: fixed;
-          inset: 0;
+          /* top / bottom / left / right are set inline so the backdrop starts
+             below the nav bar and never covers it. */
           z-index: ${BACKDROP_Z_INDEX};
           background: rgba(13, 31, 28, 0.25);
           backdrop-filter: blur(2px);
@@ -176,8 +199,9 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
         .slide-panel {
           position: fixed;
           right: 0;
-          top: 0;
-          height: 100vh;
+
+          /* top / bottom are set inline so the panel starts below the nav bar
+             and stays fixed in place while the page scrolls behind it. */
           width: 75vw;
           max-width: 80vw;
           z-index: ${PANEL_Z_INDEX};
@@ -227,6 +251,25 @@ export function SlidePanel({ open, onClose, title, subtitle, children }) {
             transition-duration: 200ms;
             pointer-events: none;
           }
+        }
+
+        /* Single internal scrollbar for the panel body content. */
+        .slide-panel-body {
+          scrollbar-width: thin;
+          scrollbar-color: var(--teal) transparent;
+        }
+        .slide-panel-body::-webkit-scrollbar {
+          width: 8px;
+        }
+        .slide-panel-body::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .slide-panel-body::-webkit-scrollbar-thumb {
+          background-color: var(--teal);
+          border-radius: 4px;
+        }
+        .slide-panel-body::-webkit-scrollbar-thumb:hover {
+          background-color: #12554e;
         }
       `}</style>
     </>
