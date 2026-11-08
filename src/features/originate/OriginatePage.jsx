@@ -12,6 +12,7 @@ import { DecisionRecordTab } from './components/DecisionRecordTab'
 import NewApplicationDialog from './components/NewApplicationDialog'
 import { NavRail } from './components/NavRail'
 import { FADE_IN } from './lib/classes'
+import { ApplyPage } from './loan-application'
 
 export function OriginatePage() {
   const [url, setUrl] = useOriginateUrlState()
@@ -33,6 +34,7 @@ export function OriginatePage() {
   // Active state derived from URL (same as before)
   const activeTab = url.tab || 'applications'
   const activeChannel = url.channel || ''
+  const action = url.action
 
   // Handlers passed to NavRail (same semantics as old tabs)
   const handleTabChange = useCallback((tab) => {
@@ -145,25 +147,31 @@ export function OriginatePage() {
 
         {/* Tab content — fade in on change */}
         <div className={FADE_IN}>
-          {activeTab === 'applications' && (
-            <ApplicationsTab
-              applications={applications}
-              loading={appsLoading}
-              error={appsError}
-              pagination={pagination}
-              filters={filters}
-              setFilter={setFilter}
-              clearFilters={clearFilters}
-              goToPage={goToPage}
-              refetch={refetch}
-              products={products}
-              onNewApplication={() => setDialogOpen(true)}
-              onDecisionComplete={handleDecisionComplete}
-            />
-          )}
+          {action === 'apply' ? (
+            <ApplyPage onBack={() => setUrl({ action: undefined })} />
+          ) : (
+            <>
+              {activeTab === 'applications' && (
+                <ApplicationsTab
+                  applications={applications}
+                  loading={appsLoading}
+                  error={appsError}
+                  pagination={pagination}
+                  filters={filters}
+                  setFilter={setFilter}
+                  clearFilters={clearFilters}
+                  goToPage={goToPage}
+                  refetch={refetch}
+                  products={products}
+                  onNewApplication={() => setUrl({ action: 'apply' })}
+                  onDecisionComplete={handleDecisionComplete}
+                />
+              )}
 
-          {activeTab === 'decisions' && (
-            <DecisionRecordTab />
+              {activeTab === 'decisions' && (
+                <DecisionRecordTab />
+              )}
+            </>
           )}
         </div>
 

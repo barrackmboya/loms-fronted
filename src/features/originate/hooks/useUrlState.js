@@ -15,7 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-export const ORIGINATE_URL_KEYS = ['tab', 'channel', 'search', 'from', 'to', 'product', 'sort', 'page']
+export const ORIGINATE_URL_KEYS = ['tab', 'channel', 'search', 'from', 'to', 'product', 'sort', 'page', 'action']
 
 const readParams = () => new URLSearchParams(window.location.search)
 
