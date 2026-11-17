@@ -146,10 +146,12 @@
   --orig-content-bg: #f0f4f3;
 }
 
-/* Full-bleed: spans the viewport regardless of <main>'s max-width/padding. */
+/* Fills the app shell below the masthead + module tabs (App renders the
+   Originate page as a direct flex child of #root, not inside <main>). */
 .originate-shell {
-  width: 100vw;
-  margin-left: calc((100vw - 100%) / -2);
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 
 /* Fixed dark teal rail. No right border — contrast vs content is the separator.
@@ -339,10 +341,13 @@
   padding-left: 0;
 }
 
-/* Content area — the ONLY scroll container. */
+/* Content area — the ONLY scroll container.
+   height: 100% (not 100vh): <main> is a flexed, scrollable region of the app
+   shell (masthead + module tabs above it) — 100vh here made <main> taller
+   than the viewport and the flex shell crushed the module tab row to 0. */
 .originate-content {
   margin-left: 240px;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   background: var(--orig-content-bg);
   padding: 32px;

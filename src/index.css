@@ -81,7 +81,7 @@ button { font: inherit; }
 }
 .slide-in { animation: slide-in .3s ease-out; }
 
-main { padding: var(--s4) 22px 48px; max-width: 1200px; margin: 0 auto; }
+main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4) 22px 48px; max-width: 1200px; margin: 0 auto; }
 
 /* ---------- surfaces ---------- */
 .panel { background: var(--panel); border: 1px solid var(--line); padding: var(--s3); }
@@ -510,7 +510,8 @@ input:disabled { background: #f4f6f4; }
 /* Light Surface Variant for Ghost Buttons (e.g. inside light panels) */
 .panel .btn.ghost,
 .soft .btn.ghost,
-main .btn.ghost {
+main .btn.ghost,
+.originate-shell .btn.ghost {
   color: var(--ink-soft);
   border-color: var(--line);
   background-color: rgba(255, 255, 255, 0.6);
@@ -518,7 +519,8 @@ main .btn.ghost {
 
 .panel .btn.ghost:hover:not(:disabled),
 .soft .btn.ghost:hover:not(:disabled),
-main .btn.ghost:hover:not(:disabled) {
+main .btn.ghost:hover:not(:disabled),
+.originate-shell .btn.ghost:hover:not(:disabled) {
   background-color: #ffffff;
   border-color: var(--teal);
   color: var(--teal);

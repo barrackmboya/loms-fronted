@@ -288,20 +288,26 @@ export default function App() {
             ))}
           </nav>
 
-          <main>
-            {error && <p className="error">{error}</p>}
-            {tab === 'dashboard' && <Dashboard data={data.dashboard || data} userProfile={userProfile} />}
-            {tab === 'origination' && <OriginatePage key={userProfile?.id} userProfile={userProfile} />}
-            {tab === 'portfolio' && <Portfolio data={data.portfolio} userProfile={userProfile} />}
-            {tab === 'accounts' && <Accounts rows={data.accounts} userProfile={userProfile} />}
-            {tab === 'watchlist' && <Watchlist rows={data.watchlist} userProfile={userProfile} />}
-            {tab === 'collections' && <Collections rows={data.collections} userProfile={userProfile} />}
-            {tab === 'policy' && <PolicyPack userProfile={userProfile} />}
-            {tab === 'metrics' && <MetricsView module="origination" userProfile={userProfile} />}
-            {tab === 'document_verification' && (
-              <DocumentVerification initialSeed={documentSeed} userProfile={userProfile} />
-            )}
-          </main>
+          {tab === 'origination' ? (
+            /* Full-page module: owns the whole region below the tab bar
+               (fixed left rail + scrollable content column) instead of
+               living inside the centered <main> container. */
+            <OriginatePage key={userProfile?.id} userProfile={userProfile} />
+          ) : (
+            <main>
+              {error && <p className="error">{error}</p>}
+              {tab === 'dashboard' && <Dashboard data={data.dashboard || data} userProfile={userProfile} />}
+              {tab === 'portfolio' && <Portfolio data={data.portfolio} userProfile={userProfile} />}
+              {tab === 'accounts' && <Accounts rows={data.accounts} userProfile={userProfile} />}
+              {tab === 'watchlist' && <Watchlist rows={data.watchlist} userProfile={userProfile} />}
+              {tab === 'collections' && <Collections rows={data.collections} userProfile={userProfile} />}
+              {tab === 'policy' && <PolicyPack userProfile={userProfile} />}
+              {tab === 'metrics' && <MetricsView module="origination" userProfile={userProfile} />}
+              {tab === 'document_verification' && (
+                <DocumentVerification initialSeed={documentSeed} userProfile={userProfile} />
+              )}
+            </main>
+          )}
         </>
       )}
 
