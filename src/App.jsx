@@ -162,35 +162,22 @@ export default function App() {
     }
   }, [])
 
-  // Set initial tab based on user's accessible modules
+  // Set initial tab: the first module tab (restored — tabs are no longer
+  // filtered by accessible_modules, every main module is always shown).
   useEffect(() => {
-    if (userProfile && userProfile.accessible_modules && userProfile.accessible_modules.length > 0) {
-      // Find the first accessible module that is in MODULE_TABS
-      const firstAccessibleTab = userProfile.accessible_modules.find(
-        module => MODULE_TABS[module]
-      );
-      if (firstAccessibleTab) {
-        setTab(firstAccessibleTab);
-      } else {
-        // Fallback to the first tab in MODULE_TABS if none of the accessible modules are in MODULE_TABS
-        setTab(Object.keys(MODULE_TABS)[0] || '');
-      }
+    if (userProfile && !tab) {
+      setTab(Object.keys(MODULE_TABS)[0] || '')
     }
-  }, [userProfile])
+  }, [userProfile, tab])
 
   const load = useCallback(async () => {
     try {
-      if (!userProfile || !Array.isArray(userProfile.accessible_modules)) {
-        setError('Unable to load data: user profile not available')
-        return
-      }
-
       const [dashboardData, portfolioData, accountsData, watchlistData, collectionsData] = await Promise.all([
-        userProfile.accessible_modules.includes('dashboard') && api.dashboard ? api.dashboard() : Promise.resolve(null),
-        userProfile.accessible_modules.includes('portfolio') ? api.portfolio() : Promise.resolve([]),
-        userProfile.accessible_modules.includes('accounts') ? api.accounts() : Promise.resolve([]),
-        userProfile.accessible_modules.includes('watchlist') ? api.watchlist() : Promise.resolve([]),
-        userProfile.accessible_modules.includes('collections') ? api.collections() : Promise.resolve([]),
+        api.dashboard ? api.dashboard() : Promise.resolve(null),
+        api.portfolio(),
+        api.accounts(),
+        api.watchlist(),
+        api.collections(),
       ])
       
       setData({
@@ -204,7 +191,7 @@ export default function App() {
     } catch (e) {
       setError(`Can't reach the API. (${e.message})`)
     }
-  }, [userProfile])
+  }, [])
 
   useEffect(() => {
     if (userProfile) {
@@ -286,43 +273,32 @@ export default function App() {
 
       {isAuthenticated && !userProfile ? (
         <p className="p-6">Loading user profile...</p>
-      ) : userProfile && userProfile.accessible_modules && userProfile.accessible_modules.length === 0 ? (
-        <div className="panel" style={{ textAlign: 'center', padding: '40px' }}>
-          <h2>No roles assigned yet</h2>
-          <p className="note">Please contact an administrator to assign modules to your role.</p>
-        </div>
       ) : (
         <>
           <nav className="tabs" role="tablist">
-            {userProfile.accessible_modules.map((moduleName) => {
-              const tabConfig = MODULE_TABS[moduleName];
-              if (tabConfig) {
-                return (
-                  <button
-                    key={moduleName}
-                    role="tab"
-                    aria-selected={tab === moduleName}
-                    onClick={() => setTab(moduleName)}
-                  >
-                    <tabConfig.icon size={15} /> {tabConfig.label}
-                  </button>
-                );
-              }
-              return null;
-            })}
+            {Object.values(MODULE_TABS).map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => setTab(key)}
+              >
+                <Icon size={15} /> {label}
+              </button>
+            ))}
           </nav>
 
           <main>
             {error && <p className="error">{error}</p>}
-            {tab === 'dashboard' && userProfile.accessible_modules.includes('dashboard') && <Dashboard data={data.dashboard || data} userProfile={userProfile} />}
-            {tab === 'origination' && userProfile.accessible_modules.includes('origination') && <OriginatePage key={userProfile?.id} userProfile={userProfile} />}
-            {tab === 'portfolio' && userProfile.accessible_modules.includes('portfolio') && <Portfolio data={data.portfolio} userProfile={userProfile} />}
-            {tab === 'accounts' && userProfile.accessible_modules.includes('accounts') && <Accounts rows={data.accounts} userProfile={userProfile} />}
-            {tab === 'watchlist' && userProfile.accessible_modules.includes('watchlist') && <Watchlist rows={data.watchlist} userProfile={userProfile} />}
-            {tab === 'collections' && userProfile.accessible_modules.includes('collections') && <Collections rows={data.collections} userProfile={userProfile} />}
-            {tab === 'policy' && userProfile.accessible_modules.includes('policy') && <PolicyPack userProfile={userProfile} />}
-            {tab === 'metrics' && userProfile.accessible_modules.includes('metrics') && <MetricsView module="origination" userProfile={userProfile} />}
-            {tab === 'document_verification' && userProfile.accessible_modules.includes('document_verification') && (
+            {tab === 'dashboard' && <Dashboard data={data.dashboard || data} userProfile={userProfile} />}
+            {tab === 'origination' && <OriginatePage key={userProfile?.id} userProfile={userProfile} />}
+            {tab === 'portfolio' && <Portfolio data={data.portfolio} userProfile={userProfile} />}
+            {tab === 'accounts' && <Accounts rows={data.accounts} userProfile={userProfile} />}
+            {tab === 'watchlist' && <Watchlist rows={data.watchlist} userProfile={userProfile} />}
+            {tab === 'collections' && <Collections rows={data.collections} userProfile={userProfile} />}
+            {tab === 'policy' && <PolicyPack userProfile={userProfile} />}
+            {tab === 'metrics' && <MetricsView module="origination" userProfile={userProfile} />}
+            {tab === 'document_verification' && (
               <DocumentVerification initialSeed={documentSeed} userProfile={userProfile} />
             )}
           </main>
