@@ -80,7 +80,42 @@ export const api = {
       return null
     }
   },
+  // Fetch any media URL as a blob and return an object URL. Used for document
+  // previews: blob: URLs are not subject to X-Frame-Options, so PDFs render in
+  // an <iframe> even when the file response carries frame-deny headers, and the
+  // authenticated fetch keeps working if media ever gets auth-protected.
+  // Resolves null on failure so the caller can show a fallback.
+  fetchObjectUrl: async (url) => {
+    if (!url) return null
+    // Defense-in-depth: if the backend ever returns an absolute media URL
+    // (http://backend-host/media/...), fetch it as a same-origin path instead.
+    // A cross-origin fetch would fail — media responses carry no CORS headers —
+    // and the /media proxy already routes same-origin requests to the backend.
+    let target = url
+    try {
+      const parsed = new URL(url, window.location.href)
+      if (parsed.origin !== window.location.origin && parsed.pathname.startsWith('/media/')) {
+        target = parsed.pathname
+      }
+    } catch { /* not a parseable URL — fetch as-is */ }
+    const token = getToken()
+    try {
+      const r = await fetch(target, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      })
+      if (!r.ok) return null
+      const blob = await r.blob()
+      return URL.createObjectURL(blob)
+    } catch {
+      return null
+    }
+  },
   parties: (search) => get(`/api/parties${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  // --- KYC report (View Application panel) ---------------------------------
+  // GET /api/origination/reports/kyc/?id=<loan_application_id> — full KYC
+  // payload: application + product details, personal details, contacts,
+  // documents, residential + employment history. Mapped via mapKycReport().
+  kycReport: (id) => get(`/api/origination/reports/kyc/?id=${encodeURIComponent(id)}`),
   decide: (id) => post(`/api/applications/${id}/decision`),
   book: (id) => post(`/api/applications/${id}/book`),
   advanceMonth: () => post('/api/servicing/advance'),

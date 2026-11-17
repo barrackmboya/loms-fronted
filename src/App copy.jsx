@@ -150,7 +150,7 @@ export default function App() {
   return (
     <>
       <header className="masthead">
-        <h1>Credit Desk</h1>
+        <h1>Credit Master</h1>
         <span className="sub">Origination · provisioning · monitoring · collections</span>
         <div className="spacer">
           <button className="btn ghost" disabled={busy || !userProfile} onClick={() => run('seed', api.seed)}>

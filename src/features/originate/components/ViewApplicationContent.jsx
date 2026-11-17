@@ -1,100 +1,32 @@
-// View Application panel body — the four detail sections (KYC report
-// header, loan, personal + contact, residential + employment) plus the Run
-// Decision action. Same data and fetching as the former dialog; only the
-// chrome (sticky header + close) is now provided by SlidePanel.jsx.
-import { useState } from 'react'
+// View Application panel body — the four detail sections (KYC report header,
+// loan, personal + contact, residential + employment) plus the Run Decision
+// action. Data is loaded from GET /api/origination/reports/kyc/?id=<id>
+// (mapped by mapKycReport via useKycReport); only the chrome (sticky header +
+// close) is provided by SlidePanel.jsx.
+import { useEffect, useState } from 'react'
 import {
   FileText, FileSearch, Image as ImageIcon, MapPin, Building2, Home, Hash, Globe, Calendar,
   Banknote, Percent, CircleCheck, User, Users, Mail, Phone, Navigation, Map as MapIcon,
-  ZoomIn, ZoomOut, ExternalLink, Briefcase, Wallet, Loader2,
+  ZoomIn, ZoomOut, ExternalLink, Briefcase, Wallet, Loader2, AlertCircle, FileX,
 } from 'lucide-react'
 import { Badge } from '../../../components/ui/badge'
+import { Skeleton } from '../../../components/ui/skeleton'
 import { MapPanel } from '../../../components/MapPanel'
+import { useKycReport } from '../hooks/useKycReport'
 import { api } from '../../../lib/api'
 import { toast } from 'sonner'
 
-/* ----------------------------- dummy data ----------------------------- */
-const DATA = {
-  customer: 'Jane Doe',
-  report: {
-    reference: 'KYC-88888888-20261102202925',
-    organization: 'XYZ Bank',
-    generatedAt: '2026-11-02 20:29:25',
-    generatedBy: 'John Doe',
-  },
-  loan: {
-    product: 'Digital Loan', productType: 'personal_loan', currency: 'KES',
-    amount: 'KSh 1,000', term: '1 months', monthly: '—',
-    interest: '4%', fee: 'Free', cost: '4%',
-    status: 'Pending', submitted: '30 Oct 2026, 14:47', updated: '30 Oct 2026, 14:47',
-  },
-  personal: {
-    firstName: 'Jane', surname: 'Doe', otherNames: '—', idNumber: '88888888',
-    idType: 'National ID', dob: '1 January 1954 (72 yrs)', gender: 'M', marital: 'M',
-    aliases: 'JANE DOE, JANET DOE HARRY', verified: 'Yes', photo: null,
-  },
-  documents: [
-    { id: 'id', name: 'Identity Document', kind: 'pdf' },
-    { id: 'bio', name: 'Biometric Photo 1', kind: 'image' },
-    { id: 'kra', name: 'KRA PIN Certificate', kind: 'pdf' },
-    { id: 'pay', name: 'Payslip', kind: 'pdf' },
-  ],
-  contact: {
-    email: 'info@gmail.com', phone: '0729483248',
-    otherEmails: 'janedoe@yahoo.com', otherPhones: '0722707660, 058320188',
-    postal: 'P.O. Box P.O BOX 326 - 40202, KEROKA',
-    otherPostal: '40202, KEROKA, P.O BOX 326, Kenya',
-    building: '—', unit: '—', street: 'Malanga Street', estate: 'California',
-    school: 'New Pumwani Primary School', health: 'Care Hospital', religious: '—',
-    subCounty: 'Kamukunji', county: 'Nairobi',
-    mapLabel: 'Care Hospital',
-  },
-  residential: [
-    { town: 'Keroka', country: 'Kenya', address: 'Keroka', plot: '—' },
-    { town: 'KEROKA', country: 'Kenya', address: 'UNKNOWN', plot: '—' },
-    { town: 'KEROKA', country: 'Kenya', address: 'KEROKA', plot: '—' },
-  ],
-  employment: {
-    current: { employer: 'Acme', title: '—', income: 'KES 900,000', status: 'Employed' },
-    history: { position: '—', department: '—', salaryBand: '0 to 15,000', employer: 'SELF EMPLOYED', date: '—' },
-  },
-}
-
-const PAYSLIP = `==========================================
-        COMPANY ABC LIMITED
- P.O. Box 40123-00100, Nairobi | Pin: P051234567Z
-        PAYSLIP - DECEMBER 2025
-==========================================
-Employee Name: Jane Doe      Pay Period: 01/12/2025 -
-                             31/12/2025
-Employee ID:   SLK-0482      Payment Date: 23/12/2025
-Job Title:     Operations Assistant
-                             Bank Account: KCB -
-                             123****890
-KRA PIN: A012345678M         M-Pesa No: 0712345678
-NSSF No: 987654321           SHIF No:   4567890123
-------------------------------------------
-EARNINGS                     AMOUNT (KES)
-Basic Salary                    52,500.00
-House Allowance                 10,000.00
-------------------------------------------
-TOTAL GROSS PAY                 62,500.00
-------------------------------------------
-STATUTORY DEDUCTIONS         AMOUNT (KES)
-NSSF Contribution (Tier I & II)  2,160.00
-SHIF (Social Health Authority)   1,718.75
-Affordable Housing Levy (1.5%)     937.50
-P.A.Y.E (Tax)                    7,683.75
-------------------------------------------
-TOTAL DEDUCTIONS                12,500.00
-==========================================
-NET PAY:                        50,000.00
-==========================================
-Payment Method: Bank Transfer (KCB Bank Ltd)
-Employer Signature / Stamp: ____________`
-
 /* ------------------------------ helpers ------------------------------- */
 const ICON = 'h-3.5 w-3.5 shrink-0 text-[var(--teal)]'
+
+// Loan status → badge tone (status arrives prettified, e.g. "Pending").
+const STATUS_TONE = {
+  PENDING: 'warning',
+  APPROVED: 'success',
+  CONDITIONAL: 'warning',
+  DECLINE: 'destructive',
+  DECLINED: 'destructive',
+}
 
 function Card({ className = '', children }) {
   return (
@@ -132,6 +64,34 @@ function Field({ icon: Icon, label, children, mono = false }) {
 
 const Divider = () => <hr className="my-4 border-border" />
 
+/* ------------------------- loading / error states --------------------- */
+function PanelSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy="true">
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-56 w-full" />
+      <div className="grid grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+        <Skeleton className="h-[560px] w-full" />
+        <Skeleton className="h-[560px] w-full" />
+      </div>
+    </div>
+  )
+}
+
+function ErrorState({ error, onRetry }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-md border border-destructive/20 bg-destructive/5 p-8 text-center">
+      <AlertCircle className="h-8 w-8 text-destructive" />
+      <p className="text-sm font-medium text-destructive">Failed to load application details</p>
+      <p className="text-[13px] text-muted">{error?.message || 'Something went wrong.'}</p>
+      <button onClick={onRetry} className="btn">
+        <Loader2 className="h-4 w-4 mr-2" />
+        Retry
+      </button>
+    </div>
+  )
+}
+
 /* ------------------------- application documents ---------------------- */
 function DocIcon({ kind }) {
   return kind === 'image'
@@ -139,11 +99,97 @@ function DocIcon({ kind }) {
     : <FileText className="h-4 w-4 shrink-0 text-destructive" />
 }
 
+// Loads a document through api.fetchObjectUrl (blob → object URL). Blob URLs
+// are not subject to X-Frame-Options, so PDFs render in an <iframe> even when
+// the media response carries frame-deny headers; the authenticated fetch also
+// keeps working if media ever gets auth-protected.
+function useDocumentObjectUrl(url) {
+  const [objectUrl, setObjectUrl] = useState(null)
+  const [status, setStatus] = useState(url ? 'loading' : 'unavailable')
+
+  useEffect(() => {
+    if (!url) {
+      setObjectUrl(null)
+      setStatus('unavailable')
+      return undefined
+    }
+    let revoke = null
+    let cancelled = false
+    setStatus('loading')
+    api.fetchObjectUrl(url).then((objUrl) => {
+      if (cancelled) {
+        if (objUrl) URL.revokeObjectURL(objUrl)
+        return
+      }
+      revoke = objUrl
+      setObjectUrl(objUrl)
+      setStatus(objUrl ? 'ready' : 'failed')
+    })
+    return () => {
+      cancelled = true
+      if (revoke) URL.revokeObjectURL(revoke)
+    }
+  }, [url])
+
+  return { objectUrl, status }
+}
+
+function DocumentPreview({ doc }) {
+  const { objectUrl, status } = useDocumentObjectUrl(doc.url)
+
+  if (status === 'loading') {
+    return (
+      <div className="flex h-[480px] flex-col items-center justify-center gap-2 text-muted">
+        <Loader2 className="h-6 w-6 animate-spin" />
+        <span className="text-[12px]">Loading {doc.name}…</span>
+      </div>
+    )
+  }
+
+  // Render the real file (image inline, PDF via the browser viewer); fall back
+  // to a placeholder when the file has no URL or fails to load.
+  if (objectUrl && doc.kind === 'image') {
+    return <img src={objectUrl} alt={doc.name} className="w-full" />
+  }
+  if (objectUrl && doc.kind === 'pdf') {
+    return (
+      <iframe
+        src={objectUrl}
+        title={doc.name}
+        className="h-[480px] w-full border-0"
+      />
+    )
+  }
+  return (
+    <div className="flex h-[480px] flex-col items-center justify-center gap-2 text-muted">
+      <DocIcon kind={doc.kind} />
+      <span className="text-[12px]">
+        {status === 'failed' ? `${doc.name} could not be loaded.` : `${doc.name} — preview not available`}
+      </span>
+      {doc.url && (
+        <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-[12px] text-[var(--teal)] hover:underline">
+          Open in a new tab
+        </a>
+      )}
+    </div>
+  )
+}
+
 function DocumentsViewer({ docs }) {
-  const [activeId, setActiveId] = useState('pay')
+  // Default to the payslip (the KYC income document), else the first file.
+  const [activeId, setActiveId] = useState('payslip')
   const [zoom, setZoom] = useState(100)
-  const active = docs.find((d) => d.id === activeId) ?? docs[0]
+  const active = docs.find((d) => d.id === activeId) ?? docs.find((d) => d.id === 'payslip') ?? docs[0]
   const clamp = (v) => Math.min(200, Math.max(50, v))
+
+  if (!docs.length || !active) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border py-10 text-muted">
+        <FileX className="h-6 w-6" />
+        <p className="text-[13px]">No documents uploaded for this application.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="overflow-hidden rounded-md border border-border bg-background">
@@ -184,9 +230,14 @@ function DocumentsViewer({ docs }) {
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <span className="font-sans text-[14px] font-semibold text-foreground">{active.name}</span>
-            <button type="button" className="inline-flex items-center gap-1 text-[12px] text-[var(--teal)] hover:underline">
+            <a
+              href={active.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[12px] text-[var(--teal)] hover:underline"
+            >
               <ExternalLink className="h-3.5 w-3.5" /> Open original
-            </button>
+            </a>
           </div>
           <div className="flex items-center justify-center gap-4 border-b border-border bg-accent/40 py-2 text-[13px] text-foreground">
             <button type="button" aria-label="Zoom out" onClick={() => setZoom((z) => clamp(z - 25))}><ZoomOut className="h-4 w-4" /></button>
@@ -198,14 +249,7 @@ function DocumentsViewer({ docs }) {
               className="mx-auto origin-top rounded-sm border border-border bg-white p-6 transition-transform duration-150"
               style={{ transform: `scale(${zoom / 100})`, width: '100%', minHeight: 520 }}
             >
-              {active.id === 'pay' ? (
-                <pre className="overflow-hidden whitespace-pre font-mono text-[7px] leading-[10px] text-neutral-800">{PAYSLIP}</pre>
-              ) : (
-                <div className="flex h-[480px] flex-col items-center justify-center gap-2 text-muted">
-                  <DocIcon kind={active.kind} />
-                  <span className="text-[12px]">{active.name} — preview placeholder</span>
-                </div>
-              )}
+              <DocumentPreview doc={active} />
             </div>
           </div>
         </div>
@@ -216,7 +260,7 @@ function DocumentsViewer({ docs }) {
 
 /* ----------------------------- panel body ----------------------------- */
 export function ViewApplicationContent({ applicationId }) {
-  const { report, loan, personal: p, contact: c, employment: e } = DATA
+  const { report, loading, error, reload } = useKycReport(applicationId)
   const [decisionRunning, setDecisionRunning] = useState(false)
 
   const handleRunDecision = async () => {
@@ -232,6 +276,21 @@ export function ViewApplicationContent({ applicationId }) {
     }
   }
 
+  if (loading) return <PanelSkeleton />
+  if (error) return <ErrorState error={error} onRetry={reload} />
+  if (!report) return null
+
+  const {
+    customer,
+    report: meta,
+    loan,
+    personal: p,
+    documents,
+    contact: c,
+    residential,
+    employment: e,
+  } = report
+
   return (
     <div>
       {/* Body scrolls inside the slide panel (SlidePanel body, overflow-y-auto).
@@ -245,16 +304,16 @@ export function ViewApplicationContent({ applicationId }) {
                 <FileSearch className="h-5 w-5" />
               </span>
               <div>
-                <h2 className="font-sans text-[20px] font-bold leading-tight text-foreground">KYC Details Report</h2>
-                <p className="text-[13px] text-[var(--teal)]">Customer: {DATA.customer}</p>
+                <h2 className="font-sans text-[20px] font-bold leading-tight text-foreground">{meta.title}</h2>
+                <p className="text-[13px] text-[var(--teal)]">Customer: {customer}</p>
               </div>
             </div>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-4 md:divide-x md:divide-border">
               {[
-                ['Reference Number', report.reference, true],
-                ['Organization', report.organization],
-                ['Generated At', report.generatedAt],
-                ['Generated By', report.generatedBy],
+                ['Reference Number', meta.reference, true],
+                ['Organization', meta.organization],
+                ['Generated At', meta.generatedAt],
+                ['Generated By', meta.generatedBy],
               ].map(([k, v, mono], i) => (
                 <div key={k} className={i ? 'md:pl-6' : ''}>
                   <dt className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--teal)]">{k}</dt>
@@ -272,14 +331,14 @@ export function ViewApplicationContent({ applicationId }) {
             <Field icon={Briefcase} label="Loan product">{loan.product}</Field>
             <Field icon={Briefcase} label="Product type">{loan.productType}</Field>
             <Field icon={Globe} label="Currency">{loan.currency}</Field>
-            <Field icon={Banknote} label="Loan amount">{loan.amount}</Field>
+            <Field icon={Banknote} label="Loan amount" mono>{loan.amount}</Field>
             <Field icon={Calendar} label="Loan term">{loan.term}</Field>
-            <Field icon={Wallet} label="Monthly payment">{loan.monthly}</Field>
+            <Field icon={Wallet} label="Monthly payment" mono>{loan.monthly}</Field>
             <Field icon={Percent} label="Interest rate">{loan.interest}</Field>
             <Field icon={Banknote} label="Processing fee">{loan.fee}</Field>
             <Field icon={Percent} label="Cost of credit">{loan.cost}</Field>
             <Field icon={CircleCheck} label="Status">
-              <Badge variant="warning" className="align-middle text-xs">{loan.status}</Badge>
+              <Badge variant={STATUS_TONE[String(loan.status).toUpperCase()] ?? 'warning'} className="align-middle text-xs">{loan.status}</Badge>
             </Field>
             <Field icon={Calendar} label="Submitted">{loan.submitted}</Field>
             <Field icon={Calendar} label="Last updated">{loan.updated}</Field>
@@ -294,7 +353,7 @@ export function ViewApplicationContent({ applicationId }) {
 
             <div className="mb-5 flex flex-col items-center gap-1">
               <div className="flex h-[132px] w-[132px] items-center justify-center overflow-hidden rounded-sm border-2 border-[var(--teal)]/30 bg-accent">
-                {p.photo && !String(p.photo).startsWith('file://')
+                {p.photo
                   ? <img src={p.photo} alt="Passport Photo" className="h-full w-full object-cover" />
                   : <User className="h-14 w-14 text-muted-foreground" />}
               </div>
@@ -305,8 +364,7 @@ export function ViewApplicationContent({ applicationId }) {
               <Field icon={User} label="First Name">{p.firstName}</Field>
               <Field icon={User} label="Surname">{p.surname}</Field>
               <Field icon={User} label="Other Names">{p.otherNames}</Field>
-              <Field icon={Hash} label="ID Number">{p.idNumber}</Field>
-              <Field icon={Hash} label="ID Type">{p.idType}</Field>
+              <Field icon={Hash} label="ID Number" mono>{p.idNumber}</Field>
               <Field icon={Calendar} label="Date of Birth">{p.dob}</Field>
               <Field icon={User} label="Gender">{p.gender}</Field>
               <Field icon={User} label="Marital Status">{p.marital}</Field>
@@ -315,7 +373,7 @@ export function ViewApplicationContent({ applicationId }) {
             </div>
 
             <Divider />
-            <DocumentsViewer docs={DATA.documents} />
+            <DocumentsViewer docs={documents} />
           </Card>
 
           {/* 2. CONTACT INFORMATION */}
@@ -351,10 +409,10 @@ export function ViewApplicationContent({ applicationId }) {
             </div>
 
             <div className="mt-4 flex items-center gap-1.5 text-[13px] text-foreground">
-              <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> {c.mapLabel}
+              <MapPin className="h-3.5 w-3.5 text-muted-foreground" /> {c.mapLabel || 'Location'}
             </div>
             <div className="mt-2">
-              <MapPanel center={[-1.2833, 36.8180]} zoom={15} label={c.mapLabel} />
+              <MapPanel center={c.mapCenter} zoom={15} label={c.mapLabel} markers={c.markers} polyline={c.polyline} />
             </div>
           </Card>
         </div>
@@ -364,16 +422,20 @@ export function ViewApplicationContent({ applicationId }) {
           {/* 3. RESIDENTIAL HISTORY */}
           <Card>
             <SectionTitle n={3}>Residential History</SectionTitle>
-            <div className="space-y-3">
-              {DATA.residential.map((r, i) => (
-                <div key={i} className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border border-border p-4 sm:grid-cols-2">
-                  <Field icon={MapPin} label="Town">{r.town}</Field>
-                  <Field icon={Home} label="Address">{r.address}</Field>
-                  <Field icon={Globe} label="Country">{r.country}</Field>
-                  <Field icon={Hash} label="Plot Number">{r.plot}</Field>
-                </div>
-              ))}
-            </div>
+            {residential.length ? (
+              <div className="space-y-3">
+                {residential.map((r, i) => (
+                  <div key={i} className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border border-border p-4 sm:grid-cols-2">
+                    <Field icon={MapPin} label="Town">{r.town}</Field>
+                    <Field icon={Home} label="Address">{r.address}</Field>
+                    <Field icon={Globe} label="Country">{r.country}</Field>
+                    <Field icon={Hash} label="Plot Number">{r.plot}</Field>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[13px] text-muted">No residential history recorded.</p>
+            )}
           </Card>
 
           {/* 4. EMPLOYMENT HISTORY */}
@@ -382,20 +444,20 @@ export function ViewApplicationContent({ applicationId }) {
 
             <SubTitle>Current Employment</SubTitle>
             <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-              <Field icon={Building2} label="Employer Name">{e.current.employer}</Field>
-              <Field icon={Briefcase} label="Job Title">{e.current.title}</Field>
-              <Field icon={Banknote} label="Monthly Income">{e.current.income}</Field>
-              <Field icon={Briefcase} label="Employment Status">{e.current.status}</Field>
+              <Field icon={Building2} label="Employer Name">{e.current?.employer ?? '—'}</Field>
+              <Field icon={Briefcase} label="Job Title">{e.current?.title ?? '—'}</Field>
+              <Field icon={Banknote} label="Monthly Income" mono>{e.current?.income ?? '—'}</Field>
+              <Field icon={Briefcase} label="Employment Status">{e.current?.status ?? '—'}</Field>
             </div>
 
             <Divider />
             <SubTitle>Known Employment History</SubTitle>
             <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
-              <Field icon={Building2} label="Position">{e.history.position}</Field>
-              <Field icon={Building2} label="Department">{e.history.department}</Field>
-              <Field icon={Banknote} label="Salary Band">{e.history.salaryBand}</Field>
-              <Field icon={Building2} label="Employer Name">{e.history.employer}</Field>
-              <Field icon={Calendar} label="Employment Date">{e.history.date}</Field>
+              <Field icon={Building2} label="Position">{e.history?.position}</Field>
+              <Field icon={Building2} label="Department">{e.history?.department}</Field>
+              <Field icon={Banknote} label="Salary Band">{e.history?.salaryBand}</Field>
+              <Field icon={Building2} label="Employer Name">{e.history?.employer}</Field>
+              <Field icon={Calendar} label="Employment Date">{e.history?.date}</Field>
             </div>
             <div className="mt-4 flex justify-end">
               <button

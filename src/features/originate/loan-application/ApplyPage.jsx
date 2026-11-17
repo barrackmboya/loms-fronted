@@ -9,12 +9,14 @@ import { PersonalInfoStep } from './steps/PersonalInfo'
 import { LoanDetailsStep } from './steps/LoanDetails'
 import { DocumentsStep } from './steps/Documents'
 import { AddressStep } from './steps/AddressStep'
+import { IncomeStep } from './steps/IncomeStep'
 import { ReviewStep } from './steps/Review'
 
 const STEPS = [
   { key: 'personal', label: 'Personal Info' },
   { key: 'loan', label: 'Loan Details' },
   { key: 'documents', label: 'Documents' },
+  { key: 'income', label: 'Income' },
   { key: 'address', label: 'Address' },
   { key: 'review', label: 'Review & Submit' },
 ]
@@ -24,13 +26,20 @@ const INITIAL_FORM = {
   nationalId: '',
   email: '',
   phone: '',
-  loan_product: 'PERSONAL_LOAN',
+  loan_product: 'Quick Salary Advance',
   amount_requested: '',
   loan_term: '',
   purpose: '',
   id_photo_front: null,
+  id_photo_back: null,
+  id_photo_combined: null,
   payslip: null,
   bank_statement: null,
+  mpesa_statement: null,
+  payslipDate: null,
+  employmentStatus: '',
+  employerName: '',
+  monthlyIncome: null,
   address: {
     county: null,
     subcounty: null,
@@ -51,7 +60,7 @@ export function ApplyPage({ onBack }) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState(null)
 
-  const { submitApplication, submitting: hookSubmitting, error: hookError } = useLoanApplication()
+  const { submitApplicationMultipart, submitting: hookSubmitting, error: hookError } = useLoanApplication()
 
   const isLastStep = stepIndex === STEPS.length - 1
   const currentStep = STEPS[stepIndex]
@@ -66,7 +75,10 @@ export function ApplyPage({ onBack }) {
   }, [stepIndex])
 
   const updateField = useCallback((key, value) => {
-    setFormData((prev) => ({ ...prev, [key]: value }))
+    setFormData((prev) => {
+      const newValue = typeof value === 'function' ? value(prev[key]) : value
+      return { ...prev, [key]: newValue }
+    })
   }, [])
 
   const handleSubmit = useCallback(
@@ -74,13 +86,13 @@ export function ApplyPage({ onBack }) {
       e.preventDefault()
       setSubmitError(null)
       try {
-        await submitApplication(formData)
+        await submitApplicationMultipart(formData)
         onBack()
       } catch (e) {
         setSubmitError(e.message || 'Failed to submit application')
       }
     },
-    [formData, submitApplication, onBack]
+    [formData, submitApplicationMultipart, onBack]
   )
 
   return (
@@ -139,6 +151,12 @@ export function ApplyPage({ onBack }) {
         {currentStep.key === 'loan' && <LoanDetailsStep formData={formData} updateField={updateField} />}
         {currentStep.key === 'documents' && (
           <DocumentsStep formData={formData} updateField={updateField} />
+        )}
+        {currentStep.key === 'income' && (
+          <IncomeStep formData={formData} updateField={updateField} />
+        )}
+        {currentStep.key === 'address' && (
+          <AddressStep formData={formData} updateField={updateField} />
         )}
         {currentStep.key === 'review' && <ReviewStep formData={formData} />}
       </div>

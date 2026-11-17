@@ -7,12 +7,14 @@ import { PersonalInfoStep } from '../loan-application/steps/PersonalInfo'
 import { LoanDetailsStep } from '../loan-application/steps/LoanDetails'
 import { DocumentsStep } from '../loan-application/steps/Documents'
 import { AddressStep } from '../loan-application/steps/AddressStep'
+import { IncomeStep } from '../loan-application/steps/IncomeStep'
 import { ReviewStep } from '../loan-application/steps/Review'
 
 const STEPS = [
   { key: 'personal', label: 'Personal Info' },
   { key: 'loan', label: 'Loan Details' },
   { key: 'documents', label: 'Documents' },
+  { key: 'income', label: 'Income' },
   { key: 'address', label: 'Address' },
   { key: 'review', label: 'Review & Submit' },
 ]
@@ -22,13 +24,19 @@ const INITIAL_FORM = {
   nationalId: '',
   email: '',
   phone: '',
-  loan_product: 'PERSONAL_LOAN',
+  loan_product: 'Quick Salary Advance',
   amount_requested: '',
   loan_term: '',
   purpose: '',
   id_photo_front: null,
+  id_photo_back: null,
+  id_photo_combined: null,
   payslip: null,
   bank_statement: null,
+  mpesa_statement: null,
+  employmentStatus: '',
+  employerName: '',
+  monthlyIncome: null,
   address: {
     county: null,
     subcounty: null,
@@ -53,7 +61,7 @@ export default function NewApplicationDialog({
   const [formData, setFormData] = useState({ ...INITIAL_FORM })
   const [submitError, setSubmitError] = useState(null)
 
-  const { submitApplication, submitting, error: hookError } = useLoanApplication()
+  const { submitApplicationMultipart, submitting, error: hookError } = useLoanApplication()
 
   const isLastStep = stepIndex === STEPS.length - 1
   const currentStep = STEPS[stepIndex]
@@ -68,38 +76,63 @@ export default function NewApplicationDialog({
   }, [stepIndex])
 
   const updateField = useCallback((key, value) => {
-    setFormData((prev) => ({ ...prev, [key]: value }))
+    setFormData((prev) => {
+      const newValue = typeof value === 'function' ? value(prev[key]) : value
+      return { ...prev, [key]: newValue }
+    })
   }, [])
 
   const handleSubmit = useCallback(async () => {
     setSubmitError(null)
     try {
       const payload = { ...formData, channel }
-      await submitApplication(payload)
+      await submitApplicationMultipart(payload)
       onOpenChange(false)
       onCreated?.()
     } catch (e) {
       setSubmitError(e.message || 'Failed to submit application')
     }
-  }, [formData, channel, submitApplication, onOpenChange, onCreated])
+  }, [formData, channel, submitApplicationMultipart, onOpenChange, onCreated])
 
   // Per-step validation for Next gating
   const isStepValid = useCallback(() => {
     switch (currentStep.key) {
       case 'personal':
-        return !!formData.firstName && !!formData.nationalId && !!formData.email && !!formData.phone
+        return (
+          !!formData.first_name &&
+          !!formData.last_name &&
+          !!formData.nationalId &&
+          !!formData.email &&
+          !!formData.phone
+        )
       case 'loan':
         return !!formData.loan_product && !!formData.amount_requested && !!formData.loan_term && !!formData.purpose
       case 'documents':
         return true // documents are optional
+      case 'income': {
+        const isEmployed = formData.employmentStatus === 'EMPLOYED'
+        const isSelfEmployedProfessional =
+          formData.employmentStatus === 'SELF_EMPLOYED_PROFESSIONAL'
+        const isSelfEmployedBusiness = formData.employmentStatus === 'SELF_EMPLOYED_BUSINESS'
+        if (!formData.employmentStatus) return true
+        if (!formData.employerName || formData.monthlyIncome === null) return false
+        if (isEmployed) {
+          return !!formData.payslip && !!formData.bank_statement && !!formData.mpesa_statement
+        }
+        if (isSelfEmployedProfessional || isSelfEmployedBusiness) {
+          return !!formData.mpesa_statement
+        }
+        return true
+      }
       case 'address': {
         const a = formData.address
+        const selectedCount = (a.street ? 1 : 0) + (a.landmarks || []).filter((l) => l.type !== 'street').length
         return !!(
           a.county &&
           a.subcounty &&
           a.ward &&
           a.neighborhood &&
-          (a.street || a.landmark)
+          selectedCount >= 3
         )
       }
       case 'review':
@@ -159,6 +192,9 @@ export default function NewApplicationDialog({
           )}
           {currentStep.key === 'documents' && (
             <DocumentsStep formData={formData} updateField={updateField} />
+          )}
+          {currentStep.key === 'income' && (
+            <IncomeStep formData={formData} updateField={updateField} />
           )}
           {currentStep.key === 'address' && (
             <AddressStep formData={formData} updateField={updateField} />

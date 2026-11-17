@@ -5,7 +5,7 @@
 // Uses the project's existing fetch wrapper (lib/api.js) — no new HTTP client.
 
 import { useCallback, useState } from 'react'
-import { api } from '../../../../lib/api'
+import { api, authHeaders } from '../../../../lib/api'
 import { toast } from '../../../../components/ui/sonner'
 
 export function useLoanApplication() {
@@ -15,7 +15,7 @@ export function useLoanApplication() {
   const [application, setApplication] = useState(null)
   const [applicationId, setApplicationId] = useState(null)
 
-  // ---------- POST: create application ----------
+  // ---------- POST: create application (JSON) ----------
 
   const submitApplication = useCallback(async (formData) => {
     setSubmitting(true)
@@ -27,6 +27,57 @@ export function useLoanApplication() {
 
       const result = await api.post('/api/origination/loanapplication/', payload)
 
+      const id = result.id ?? result.application_id ?? null
+      setApplicationId(id)
+      setApplication(result)
+      toast.success(`Application submitted successfully (ID: ${id || '—'})`)
+      return result
+    } catch (e) {
+      const msg = e.message || 'Failed to submit application'
+      setError(msg)
+      toast.error(msg)
+      throw e
+    } finally {
+      setSubmitting(false)
+    }
+  }, [])
+
+  // ---------- POST: create application (multipart/form-data) ----------
+
+  const submitApplicationMultipart = useCallback(async (formData) => {
+    setSubmitting(true)
+    setError(null)
+    setApplicationId(null)
+
+    try {
+      const payload = mapFormToPayload(formData)
+
+      // Build FormData for file upload
+      const fd = new FormData()
+      Object.entries(payload).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          if (value instanceof File) {
+            fd.append(key, value)
+          } else if (typeof value === 'object') {
+            fd.append(key, JSON.stringify(value))
+          } else {
+            fd.append(key, String(value))
+          }
+        }
+      })
+
+      const response = await fetch('/api/origination/loanapplication/', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: fd,
+      })
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.detail || errData.message || `HTTP ${response.status}`)
+      }
+
+      const result = await response.json()
       const id = result.id ?? result.application_id ?? null
       setApplicationId(id)
       setApplication(result)
@@ -76,6 +127,7 @@ export function useLoanApplication() {
   return {
     // submission
     submitApplication,
+    submitApplicationMultipart,
     submitting,
     error,
     applicationId,
@@ -103,9 +155,12 @@ function mapFormToPayload(formData) {
 
   // Identity / personal
   if (formData.nationalId) payload.id_number = formData.nationalId
-  if (formData.firstName) payload.first_name = formData.firstName
-  if (formData.middleName) payload.middle_name = formData.middleName
-  if (formData.lastName) payload.last_name = formData.lastName
+  if (formData.first_name) payload.first_name = formData.first_name
+  else if (formData.firstName) payload.first_name = formData.firstName
+  if (formData.last_name) payload.last_name = formData.last_name
+  else if (formData.lastName) payload.last_name = formData.lastName
+  if (formData.other_names) payload.middle_name = formData.other_names
+  else if (formData.middleName) payload.middle_name = formData.middleName
   if (formData.email) payload.email = formData.email
   if (formData.phone) payload.phone = formData.phone
 
@@ -128,7 +183,16 @@ function mapFormToPayload(formData) {
     if (a.ward) payload.ward = a.ward.name ?? a.ward
     if (a.neighborhood) payload.estate_or_neighborhood = a.neighborhood.name ?? a.neighborhood
     if (a.street) payload.street_or_road_name = a.street.name ?? a.street
-    if (a.landmark) {
+    if (a.landmarks && Array.isArray(a.landmarks)) {
+      a.landmarks.forEach((lm) => {
+        const lmName = lm?.name
+        if (!lmName) return
+        if (lm.type === 'health_center') payload.landmark_health = lmName
+        else if (lm.type === 'school') payload.landmark_school = lmName
+        else if (lm.type === 'market') payload.landmark_church = lmName // closest available field
+        else if (lm.type === 'building') payload.building_or_premise = lmName
+      })
+    } else if (a.landmark) {
       const lm = a.landmark
       const lmName = lm.name ?? lm
       if (lm.type === 'health_center') payload.landmark_health = lmName
@@ -159,10 +223,16 @@ function mapFormToPayload(formData) {
   if (formData.employerName) payload.employer_name = formData.employerName
   if (formData.monthlyIncome !== undefined && formData.monthlyIncome !== null)
     payload.monthly_income = formData.monthlyIncome
+  if (formData.payslipDate) payload.payslip_date = formData.payslipDate
 
   // Documents (files) — include only when present
-  if (formData.id_photo_front) payload.id_photo_front = formData.id_photo_front
-  if (formData.id_photo_back) payload.id_photo_back = formData.id_photo_back
+  if (formData.id_photo_combined) {
+    payload.id_photo_front = formData.id_photo_combined
+    payload.id_photo_back = formData.id_photo_combined
+  } else {
+    if (formData.id_photo_front) payload.id_photo_front = formData.id_photo_front
+    if (formData.id_photo_back) payload.id_photo_back = formData.id_photo_back
+  }
   if (formData.kra_certificate) payload.kra_certificate = formData.kra_certificate
   if (formData.biometric_photo_1) payload.biometric_photo_1 = formData.biometric_photo_1
   if (formData.payslip) payload.payslip = formData.payslip

@@ -2,11 +2,17 @@
 // Field names match useLoanApplication's mapFormToPayload.
 
 export function LoanDetailsStep({ formData, updateField }) {
+  // Real product names — the backend looks up LoanProduct by exact name
+  // (LoanProduct.objects.filter(name=...)), so these must match loan_products.name in the DB.
   const PRODUCTS = [
-    { value: 'PERSONAL_LOAN', label: 'Personal Loan' },
-    { value: 'BUSINESS_LOAN', label: 'Business Loan' },
-    { value: 'SALARY_ADVANCE', label: 'Salary Advance' },
-    { value: 'LOGBOOK_LOAN', label: 'Logbook Loan' },
+    { value: 'Quick Salary Advance', label: 'Quick Salary Advance' },
+    { value: 'Personal Loan', label: 'Personal Loan' },
+    { value: 'Salary Advanced', label: 'Salary Advanced' },
+    { value: 'Logbook Loan', label: 'Logbook Loan' },
+    { value: 'Car Loan', label: 'Car Loan' },
+    { value: 'Home Loan', label: 'Home Loan' },
+    { value: 'Education Loan', label: 'Education Loan' },
+    { value: 'Digital Loan', label: 'Digital Loan' },
   ]
 
   return (

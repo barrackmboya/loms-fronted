@@ -1,8 +1,13 @@
 // Applications tab — toolbar, table, pagination.
 // Phase 4: Applications table.
 // Channel navigation moved to NavRail.
+//
+// Data loading: this tab is self-contained and fetches its own list from
+// GET /api/origination/loanapplication/ (page/page_size only). Search, date,
+// product and sort are applied client-side because the loanapplication list
+// endpoint only accepts page, page_size, id and id_number.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react'
 import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, FileText } from 'lucide-react'
 import { Skeleton } from '../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../components/ui/empty'
@@ -14,6 +19,7 @@ import { useDebounce } from './hooks/useDebounce'
 import { formatDate, formatCurrency } from '../../lib/format'
 import { ROW_STAGGER, FADE_IN, BUTTON_HOVER_LIFT, ROW_FLASH_SUCCESS } from './lib/classes'
 import { api } from '../../lib/api'
+import { mapLoanApplication } from './lib/mappers'
 import { decisionStore } from './lib/decisionStore'
 import { toast } from 'sonner'
 
@@ -28,21 +34,37 @@ const SORT_OPTIONS = [
 
 const PAGE_SIZE = 20
 
-export function ApplicationsTab({
-  applications,
-  loading,
-  error,
-  pagination,
-  filters,
-  setFilter,
-  clearFilters,
-  goToPage,
-  refetch,
-  products,
-  onNewApplication,
-  onDecisionComplete,
-}) {
-  const [localError, setLocalError] = useState(null)
+const DEFAULT_FILTERS = {
+  search: '',
+  dateFrom: '',
+  dateTo: '',
+  product: '',
+  sort: '-created_at',
+}
+
+// Backend sort param -> mapped application field
+const SORT_FIELD_MAP = {
+  created_at: 'createdAt',
+  amount_requested: 'amount',
+  name: 'name',
+}
+
+const ApplicationsTab = forwardRef(function ApplicationsTab(
+  { channel = '', onNewApplication, onDecisionComplete },
+  ref
+) {
+  const [applications, setApplications] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [pagination, setPagination] = useState({
+    page: 1,
+    count: 0,
+    hasNext: false,
+    hasPrevious: false,
+  })
+  const [filters, setFilters] = useState({ ...DEFAULT_FILTERS })
+  // Cache of fetched pages: pageNumber -> { data, totalCount }
+  const pageCache = useRef(new Map())
   const [debouncedSearch, setDebouncedSearch] = useState(filters.search || '')
   const [showDateFrom, setShowDateFrom] = useState(false)
   const [showDateTo, setShowDateTo] = useState(false)
@@ -56,35 +78,145 @@ export function ApplicationsTab({
   const [running, setRunning] = useState(new Set())
   // ID of the application currently being viewed in the detail dialog
   const [viewAppId, setViewAppId] = useState(null)
-  
+
   // Debounce search input (250ms)
   const debouncedSearchValue = useDebounce(debouncedSearch, 250)
 
-  // Sync debounced search to URL filter
+  // Sync debounced search into filters
   useEffect(() => {
-    if (debouncedSearchValue !== filters.search) {
-      setFilter('search', debouncedSearchValue || '')
-    }
-  }, [debouncedSearchValue, filters.search, setFilter])
+    setFilters((prev) =>
+      prev.search === debouncedSearchValue ? prev : { ...prev, search: debouncedSearchValue || '' }
+    )
+  }, [debouncedSearchValue])
 
-  // Reset page to 1 when channel changes
-  useEffect(() => {
-    if (hasLoadedOnce && pagination.page !== 1) {
-      goToPage(1)
-    }
-  }, [filters.channel, hasLoadedOnce, pagination.page, goToPage])
+  const buildQuery = useCallback((page) => {
+    const params = new URLSearchParams()
+    params.set('page', page)
+    params.set('page_size', PAGE_SIZE)
+    return params.toString()
+  }, [])
 
-  // Track initial load for staggered animation
+  const fetchPage = useCallback(
+    async (page, currentFilters, { forceRefresh = false } = {}) => {
+      const cacheKey = JSON.stringify({ page, ...currentFilters })
+
+      if (!forceRefresh && pageCache.current.has(cacheKey)) {
+        const cached = pageCache.current.get(cacheKey)
+        console.log('[ApplicationsTab] Cache hit for:', cacheKey)
+        return cached
+      }
+
+      setLoading(true)
+      setError(null)
+      try {
+        const url = `/api/origination/loanapplication/?${buildQuery(page)}`
+        console.log('[ApplicationsTab] Fetching:', url)
+        const response = await api.get(url)
+        // Backend shape: { api_code, success, data: [...], meta: { page, page_size, total, total_pages } }
+        const raw = response.data ?? []
+        const meta = response.meta ?? {}
+        const mapped = raw.map(mapLoanApplication)
+
+        const pageData = {
+          data: mapped,
+          totalCount: meta.total ?? 0,
+          page,
+          hasNext: page < (meta.total_pages ?? 0),
+          hasPrevious: page > 1,
+        }
+
+        pageCache.current.set(cacheKey, pageData)
+        return pageData
+      } catch (e) {
+        console.error('[ApplicationsTab] Error:', e)
+        setError(e.message || 'Failed to load applications')
+        throw e
+      } finally {
+        setLoading(false)
+      }
+    },
+    [buildQuery]
+  )
+
+  // Client-side filtering + sort. The loanapplication endpoint does not support
+  // search/date/product/sort server-side, so they are applied to the fetched page.
+  const applyFilters = useCallback(
+    (apps, currentFilters) => {
+      let result = apps
+      const { search, dateFrom, dateTo, product, sort } = currentFilters
+
+      if (search) {
+        const term = search.toLowerCase()
+        result = result.filter(
+          (app) =>
+            (app.name || '').toLowerCase().includes(term) ||
+            (app.reference || '').toLowerCase().includes(term)
+        )
+      }
+      if (dateFrom) {
+        result = result.filter((app) => app.createdAt && app.createdAt >= dateFrom)
+      }
+      if (dateTo) {
+        result = result.filter((app) => app.createdAt && app.createdAt <= dateTo)
+      }
+      if (product) {
+        result = result.filter((app) => app.product === product)
+      }
+
+      if (sort) {
+        const dir = sort.startsWith('-') ? -1 : 1
+        const field = SORT_FIELD_MAP[sort.replace(/^-/, '')] || sort.replace(/^-/, '')
+        result = [...result].sort((a, b) => {
+          let av = a[field]
+          let bv = b[field]
+          if (av == null || av === '') av = ''
+          if (bv == null || bv === '') bv = ''
+          if (av < bv) return -dir
+          if (av > bv) return dir
+          return 0
+        })
+      }
+
+      return result
+    },
+    []
+  )
+
+  const loadPage = useCallback(
+    async (page, currentFilters = filters, options = {}) => {
+      try {
+        const pageData = await fetchPage(page, currentFilters, options)
+        setApplications(applyFilters(pageData.data, currentFilters))
+        setPagination({
+          page: pageData.page,
+          count: pageData.totalCount,
+          hasNext: pageData.hasNext,
+          hasPrevious: pageData.hasPrevious,
+        })
+      } catch (e) {
+        // Error already set in fetchPage
+      }
+    },
+    [fetchPage, applyFilters, filters]
+  )
+
+  // Load page 1 when channel or any filter changes
   useEffect(() => {
-    if (!loading && hasLoadedOnce) {
-      setIsInitialLoad(false)
-      // Re-enable stagger on next channel/tab switch
-      setTimeout(() => setIsInitialLoad(true), 0)
-    }
-    if (!loading && !hasLoadedOnce) {
-      setHasLoadedOnce(true)
-    }
-  }, [loading, hasLoadedOnce])
+    pageCache.current.clear()
+    loadPage(1, filters)
+  }, [channel, filters, loadPage])
+
+  // Imperative refetch (used by OriginatePage after a new application is created)
+  const refetch = useCallback(() => {
+    pageCache.current.clear()
+    return loadPage(1, filters)
+  }, [filters, loadPage])
+
+  useImperativeHandle(
+    ref,
+    () => ({ refetch }),
+    [refetch]
+  )
 
   // Auto-refetch when the API reports records exist but page 1 returned no data.
   // Bypasses the cache (forceRefresh) to get a fresh response. Capped at 3 attempts
@@ -95,13 +227,12 @@ export function ApplicationsTab({
       applications.length === 0 &&
       !loading &&
       !error &&
-      !localError &&
       emptyRefetchAttempts < 3
     ) {
       setEmptyRefetchAttempts((prev) => prev + 1)
       refetch()
     }
-  }, [pagination.count, applications.length, loading, error, localError, refetch, emptyRefetchAttempts])
+  }, [pagination.count, applications.length, loading, error, refetch, emptyRefetchAttempts])
 
   // Handle search input change (local state, debounced)
   const handleSearchChange = useCallback((e) => {
@@ -110,32 +241,32 @@ export function ApplicationsTab({
 
   // Handle date filter changes
   const handleDateFromChange = useCallback((e) => {
-    setFilter('dateFrom', e.target.value)
-  }, [setFilter])
+    setFilters((prev) => ({ ...prev, dateFrom: e.target.value }))
+  }, [])
 
   const handleDateToChange = useCallback((e) => {
-    setFilter('dateTo', e.target.value)
-  }, [setFilter])
+    setFilters((prev) => ({ ...prev, dateTo: e.target.value }))
+  }, [])
 
   // Handle product filter change
   const handleProductChange = useCallback((e) => {
-    setFilter('product', e.target.value)
-  }, [setFilter])
+    setFilters((prev) => ({ ...prev, product: e.target.value }))
+  }, [])
 
   // Handle sort change
   const handleSortChange = useCallback((e) => {
-    setFilter('sort', e.target.value)
-  }, [setFilter])
+    setFilters((prev) => ({ ...prev, sort: e.target.value }))
+  }, [])
 
   // Handle clear filters
   const handleClearFilters = useCallback(() => {
-    clearFilters()
+    setFilters(DEFAULT_FILTERS)
     setDebouncedSearch('')
-  }, [clearFilters])
+  }, [])
 
   // Handle retry
   const handleRetry = useCallback(() => {
-    setLocalError(null)
+    setError(null)
     refetch()
   }, [refetch])
 
@@ -176,7 +307,7 @@ export function ApplicationsTab({
     }
   }, [onDecisionComplete])
 
-  // Check if any filters are active (besides channel and default sort)
+  // Check if any filters are active (besides default sort)
   const hasActiveFilters = useMemo(() => {
     return !!(
       debouncedSearchValue ||
@@ -186,12 +317,6 @@ export function ApplicationsTab({
       (filters.sort && filters.sort !== '-created_at')
     )
   }, [debouncedSearchValue, filters])
-
-  // Determine current state
-  const isEmpty = !loading && !error && !localError && applications.length === 0 && !hasActiveFilters && pagination.count === 0
-  const isNoMatch = !loading && !error && !localError && applications.length === 0 && hasActiveFilters
-  const isDataMissing = !loading && !error && !localError && applications.length === 0 && !hasActiveFilters && pagination.count > 0
-  const isErrorState = !loading && (error || localError)
 
   // Format application for display
   const formatApplication = useCallback((app) => ({
@@ -205,8 +330,21 @@ export function ApplicationsTab({
 
   const formattedApps = useMemo(() => applications.map(formatApplication), [applications, formatApplication])
 
+  // Product names for the toolbar dropdown, derived from loaded applications
+  const products = useMemo(() => {
+    const set = new Set()
+    applications.forEach((app) => { if (app.product) set.add(app.product) })
+    return Array.from(set).sort()
+  }, [applications])
+
   // Application currently open in the View Application slide-in panel.
   const selectedApp = useMemo(() => formattedApps.find((app) => app.id === viewAppId), [formattedApps, viewAppId])
+
+  // Determine current state
+  const isEmpty = !loading && !error && applications.length === 0 && !hasActiveFilters && pagination.count === 0
+  const isNoMatch = !loading && !error && applications.length === 0 && hasActiveFilters
+  const isDataMissing = !loading && !error && applications.length === 0 && !hasActiveFilters && pagination.count > 0
+  const isErrorState = !loading && error
 
   // Render skeleton rows
   const renderSkeletonRows = () => (
@@ -316,7 +454,7 @@ export function ApplicationsTab({
           <div className="flex flex-col items-center gap-3 text-center p-4 rounded-lg border border-destructive/20 bg-destructive/5">
             <AlertCircle className="h-8 w-8 text-destructive" />
             <p className="text-sm text-destructive font-medium">
-              {error?.message || localError || 'Failed to load applications'}
+              {error?.message || 'Failed to load applications'}
             </p>
             <button
               onClick={handleRetry}
@@ -422,14 +560,21 @@ export function ApplicationsTab({
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => goToPage(pagination.page - 1)}
+            onClick={() => {
+              const next = pagination.page - 1
+              if (next < 1) return
+              loadPage(next, filters)
+            }}
             disabled={!pagination.hasPrevious || loading}
             className={`${BUTTON_HOVER_LIFT} btn ghost text-sm px-3 py-1.5 disabled:opacity-50`}
           >
             Previous
           </button>
           <button
-            onClick={() => goToPage(pagination.page + 1)}
+            onClick={() => {
+              const next = pagination.page + 1
+              loadPage(next, filters)
+            }}
             disabled={!pagination.hasNext || loading}
             className={`${BUTTON_HOVER_LIFT} btn ghost text-sm px-3 py-1.5 disabled:opacity-50`}
           >
@@ -531,7 +676,7 @@ export function ApplicationsTab({
               <Badge variant="secondary" className="gap-1">
                 Name: {debouncedSearchValue}
                 <button
-                  onClick={() => { setDebouncedSearch(''); setFilter('search', '') }}
+                  onClick={() => { setDebouncedSearch(''); setFilters((prev) => ({ ...prev, search: '' })) }}
                   className="ml-1 hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
@@ -542,7 +687,7 @@ export function ApplicationsTab({
               <Badge variant="secondary" className="gap-1">
                 From: {filters.dateFrom}
                 <button
-                  onClick={() => setFilter('dateFrom', '')}
+                  onClick={() => setFilters((prev) => ({ ...prev, dateFrom: '' }))}
                   className="ml-1 hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
@@ -553,7 +698,7 @@ export function ApplicationsTab({
               <Badge variant="secondary" className="gap-1">
                 To: {filters.dateTo}
                 <button
-                  onClick={() => setFilter('dateTo', '')}
+                  onClick={() => setFilters((prev) => ({ ...prev, dateTo: '' }))}
                   className="ml-1 hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
@@ -564,7 +709,7 @@ export function ApplicationsTab({
               <Badge variant="secondary" className="gap-1">
                 Product: {filters.product}
                 <button
-                  onClick={() => setFilter('product', '')}
+                  onClick={() => setFilters((prev) => ({ ...prev, product: '' }))}
                   className="ml-1 hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
@@ -575,7 +720,7 @@ export function ApplicationsTab({
               <Badge variant="secondary" className="gap-1">
                 Sort: {SORT_OPTIONS.find(o => o.value === filters.sort)?.label || filters.sort}
                 <button
-                  onClick={() => setFilter('sort', '-created_at')}
+                  onClick={() => setFilters((prev) => ({ ...prev, sort: '-created_at' }))}
                   className="ml-1 hover:text-foreground"
                 >
                   <X className="h-3 w-3" />
@@ -646,4 +791,6 @@ export function ApplicationsTab({
       )}
     </div>
   )
-}
+})
+
+export { ApplicationsTab }

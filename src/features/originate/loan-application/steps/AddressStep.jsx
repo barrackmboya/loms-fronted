@@ -1,20 +1,12 @@
 // Address step — step 4 of the loan application form.
 // Cascading location dropdowns (County → Sub-County → Ward → Neighborhood)
-// backed by Django location API endpoints, plus a landmark selector.
+// backed by Django location API endpoints, plus landmark selectors
+// (Street / School / Health Center / Building / Market).
 //
-// Form data is stored under formData.address:
-// {
-//   county: { id, name } | null,
-//   subcounty: { id, name } | null,
-//   ward: { id, name } | null,
-//   neighborhood: { id, name } | null,
-//   street: { id, name } | null,
-//   landmark: { type, id, name } | null,
-//   lat: number | null,
-//   lng: number | null,
-//   plot_number: string,
-//   postal_code: string
-// }
+// After a Neighborhood is selected, the user may pick ONE option per landmark
+// type — up to all five. At least 3 selections are required to proceed.
+// Any change in a parent selection always triggers a fresh reload of the
+// child options (no stale cache) and clears all downstream selections.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../../../../lib/api'
@@ -22,12 +14,14 @@ import { api } from '../../../../lib/api'
 const LOCATION_BASE = '/api/origination/location'
 
 const LANDMARK_TYPES = [
-  { key: 'street', label: 'Street', endpoint: 'streets' },
-  { key: 'school', label: 'School', endpoint: 'schools' },
-  { key: 'health_center', label: 'Health Center', endpoint: 'health-centers' },
-  { key: 'building', label: 'Building', endpoint: 'buildings' },
-  { key: 'market', label: 'Market', endpoint: 'markets' },
+  { key: 'street', label: 'Street', endpoint: 'streets', category: 'streets' },
+  { key: 'school', label: 'School', endpoint: 'schools', category: 'schools' },
+  { key: 'health_center', label: 'Health Center', endpoint: 'health-centers', category: 'healthCenters' },
+  { key: 'building', label: 'Building', endpoint: 'buildings', category: 'buildings' },
+  { key: 'market', label: 'Market', endpoint: 'markets', category: 'markets' },
 ]
+
+const MIN_LANDMARK_SELECTIONS = 3
 
 const INITIAL_ADDRESS = {
   county: null,
@@ -36,268 +30,311 @@ const INITIAL_ADDRESS = {
   neighborhood: null,
   street: null,
   landmark: null,
+  landmarks: [],
   lat: null,
   lng: null,
   plot_number: '',
   postal_code: '',
 }
 
-// Fetch a dropdown list and return the `data` array.
 async function fetchOptions(endpoint, params = {}) {
   const search = new URLSearchParams()
   Object.entries(params).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') search.append(k, v)
   })
   const url = `${LOCATION_BASE}/${endpoint}/${search.toString() ? `?${search.toString()}` : ''}`
-  const response = await api.get(url)
-  return Array.isArray(response.data) ? response.data : []
+  const res = await api.get(url)
+
+  if (Array.isArray(res)) return res
+  if (Array.isArray(res?.data?.data)) return res.data.data
+  if (Array.isArray(res?.data)) return res.data
+  return []
 }
 
 export function AddressStep({ formData, updateField }) {
-  const address = formData.address ?? INITIAL_ADDRESS
+  const address = { ...INITIAL_ADDRESS, ...formData.address }
 
-  // Per-endpoint loading / error state
-  const [loading, setLoading] = useState({ counties: false })
-  const [error, setError] = useState({})
-
-  // Cached option lists, keyed by the parent id used to fetch them
-  const cacheRef = useRef({
-    counties: null,
-    subcounties: {},
-    wards: {},
-    neighborhoods: {},
-    streets: {},
-    schools: {},
-    healthCenters: {},
-    buildings: {},
-    markets: {},
+  const [loading, setLoading] = useState({
+    counties: false,
+    subcounties: false,
+    wards: false,
+    neighborhoods: false,
+    streets: false,
+    schools: false,
+    healthCenters: false,
+    buildings: false,
+    markets: false,
   })
+  const [error, setError] = useState({})
 
   const [options, setOptions] = useState({
     counties: [],
     subcounties: [],
     wards: [],
     neighborhoods: [],
-    landmarks: [],
+    streets: [],
+    schools: [],
+    healthCenters: [],
+    buildings: [],
+    markets: [],
   })
 
-  const landmarkTypeRef = useRef(address.landmark?.type ?? 'street')
+  // Request sequence guards: a response is only applied if it is still the
+  // latest request for its category. Prevents a slow earlier response from
+  // overwriting fresher options after a rapid parent change.
+  const seqRef = useRef({})
+  const bumpSeq = (category) => {
+    seqRef.current[category] = (seqRef.current[category] || 0) + 1
+    return seqRef.current[category]
+  }
+  const isCurrent = (category, reqId) => seqRef.current[category] === reqId
 
-  // ---------- County: load on mount ----------
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading((prev) => ({ ...prev, counties: true }))
-    setError((prev) => ({ ...prev, counties: null }))
-
-    fetchOptions('counties')
-      .then((data) => {
-        if (!cancelled) {
-          setOptions((prev) => ({ ...prev, counties: data }))
-          cacheRef.current.counties = data
-          if (data.length && !address.county) {
-            updateField('address', { ...address, county: data[0] })
-          }
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError((prev) => ({ ...prev, counties: err.message || 'Failed to load counties' }))
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading((prev) => ({ ...prev, counties: false }))
-      })
-
-    return () => { cancelled = true }
+  // Clears a category's options and invalidates any in-flight request.
+  const clearCategory = useCallback((category) => {
+    bumpSeq(category)
+    setOptions((prev) => ({ ...prev, [category]: [] }))
+    setLoading((prev) => ({ ...prev, [category]: false }))
+    setError((prev) => ({ ...prev, [category]: null }))
   }, [])
 
-  // ---------- Derived fetch triggers ----------
-
-  const fetchSubCounties = useCallback(async (county) => {
-    if (!county) {
-      setOptions((prev) => ({ ...prev, subcounties: [] }))
-      updateField('address', { ...address, subcounty: null, ward: null, neighborhood: null, street: null, landmark: null })
-      return
-    }
-    const key = county.id ?? county
-    if (cacheRef.current.subcounties[key]) {
-      setOptions((prev) => ({ ...prev, subcounties: cacheRef.current.subcounties[key] }))
-      return
-    }
-    setLoading((prev) => ({ ...prev, subcounties: true }))
-    setError((prev) => ({ ...prev, subcounties: null }))
+  const fetchCategory = useCallback(async (category, endpoint, params) => {
+    const reqId = bumpSeq(category)
+    setLoading((prev) => ({ ...prev, [category]: true }))
+    setError((prev) => ({ ...prev, [category]: null }))
     try {
-      const data = await fetchOptions('subcounties', { county: key })
-      cacheRef.current.subcounties[key] = data
-      setOptions((prev) => ({ ...prev, subcounties: data }))
-      updateField('address', { ...address, subcounty: data.length ? data[0] : null, ward: null, neighborhood: null, street: null, landmark: null })
+      const data = await fetchOptions(endpoint, params)
+      if (!isCurrent(category, reqId)) return
+      setOptions((prev) => ({ ...prev, [category]: data }))
     } catch (err) {
-      setError((prev) => ({ ...prev, subcounties: err.message || 'Failed to load sub-counties' }))
+      if (!isCurrent(category, reqId)) return
+      setError((prev) => ({ ...prev, [category]: err.message || `Failed to load ${category}` }))
     } finally {
-      setLoading((prev) => ({ ...prev, subcounties: false }))
+      if (isCurrent(category, reqId)) {
+        setLoading((prev) => ({ ...prev, [category]: false }))
+      }
     }
-  }, [address])
+  }, [])
 
-  const fetchWards = useCallback(async (county, subcounty) => {
-    if (!county || !subcounty) {
-      setOptions((prev) => ({ ...prev, wards: [] }))
-      updateField('address', { ...address, ward: null, neighborhood: null, street: null, landmark: null })
-      return
-    }
-    const key = `${county.id ?? county}-${subcounty.id ?? subcounty}`
-    if (cacheRef.current.wards[key]) {
-      setOptions((prev) => ({ ...prev, wards: cacheRef.current.wards[key] }))
-      return
-    }
-    setLoading((prev) => ({ ...prev, wards: true }))
-    setError((prev) => ({ ...prev, wards: null }))
+  // ---------- Loaders (each call always hits the API — fresh options) ----------
+
+  const loadCounties = useCallback(async () => {
+    const reqId = bumpSeq('counties')
+    setLoading((prev) => ({ ...prev, counties: true }))
+    setError((prev) => ({ ...prev, counties: null }))
     try {
-      const data = await fetchOptions('wards', { county: county.id ?? county, subcounty: subcounty.id ?? subcounty })
-      cacheRef.current.wards[key] = data
-      setOptions((prev) => ({ ...prev, wards: data }))
-      updateField('address', { ...address, ward: data.length ? data[0] : null, neighborhood: null, street: null, landmark: null })
+      const data = await fetchOptions('counties', {})
+      if (!isCurrent('counties', reqId)) return
+      setOptions((prev) => ({ ...prev, counties: data }))
+      if (data.length) {
+        updateField('address', (addr) => {
+          if (!addr.county) return { ...addr, county: data[0] }
+          return addr
+        })
+      }
     } catch (err) {
-      setError((prev) => ({ ...prev, wards: err.message || 'Failed to load wards' }))
+      if (!isCurrent('counties', reqId)) return
+      setError((prev) => ({ ...prev, counties: err.message || 'Failed to load counties' }))
     } finally {
-      setLoading((prev) => ({ ...prev, wards: false }))
+      if (isCurrent('counties', reqId)) {
+        setLoading((prev) => ({ ...prev, counties: false }))
+      }
     }
-  }, [address])
+  }, [updateField])
 
-  const fetchNeighborhoods = useCallback(async (county, subcounty, ward) => {
-    if (!county || !subcounty || !ward) {
-      setOptions((prev) => ({ ...prev, neighborhoods: [] }))
-      updateField('address', { ...address, neighborhood: null, street: null, landmark: null })
-      return
-    }
-    const key = `${county.id ?? county}-${subcounty.id ?? subcounty}-${ward.id ?? ward}`
-    if (cacheRef.current.neighborhoods[key]) {
-      setOptions((prev) => ({ ...prev, neighborhoods: cacheRef.current.neighborhoods[key] }))
-      return
-    }
-    setLoading((prev) => ({ ...prev, neighborhoods: true }))
-    setError((prev) => ({ ...prev, neighborhoods: null }))
-    try {
-      const data = await fetchOptions('neighborhoods', {
-        county: county.id ?? county,
-        subcounty: subcounty.id ?? subcounty,
-        ward: ward.id ?? ward,
+  const loadSubCounties = useCallback(
+    (county) => {
+      if (!county) {
+        clearCategory('subcounties')
+        return
+      }
+      return fetchCategory('subcounties', 'subcounties', { county: county.name })
+    },
+    [fetchCategory, clearCategory]
+  )
+
+  const loadWards = useCallback(
+    (county, subcounty) => {
+      if (!county || !subcounty) {
+        clearCategory('wards')
+        return
+      }
+      return fetchCategory('wards', 'wards', { county: county.name, subcounty: subcounty.name })
+    },
+    [fetchCategory, clearCategory]
+  )
+
+  const loadNeighborhoods = useCallback(
+    (county, subcounty, ward) => {
+      if (!county || !subcounty || !ward) {
+        clearCategory('neighborhoods')
+        return
+      }
+      return fetchCategory('neighborhoods', 'neighborhoods', {
+        county: county.name,
+        subcounty: subcounty.name,
+        ward: ward.name,
       })
-      cacheRef.current.neighborhoods[key] = data
-      setOptions((prev) => ({ ...prev, neighborhoods: data }))
-      updateField('address', { ...address, neighborhood: data.length ? data[0] : null, street: null, landmark: null })
-    } catch (err) {
-      setError((prev) => ({ ...prev, neighborhoods: err.message || 'Failed to load neighborhoods' }))
-    } finally {
-      setLoading((prev) => ({ ...prev, neighborhoods: false }))
-    }
-  }, [address])
+    },
+    [fetchCategory, clearCategory]
+  )
 
-  const fetchLandmarks = useCallback(async (neighborhood, type) => {
-    if (!neighborhood) {
-      setOptions((prev) => ({ ...prev, landmarks: [] }))
-      return
-    }
-    if (!address.county || !address.subcounty || !address.ward) {
-      setOptions((prev) => ({ ...prev, landmarks: [] }))
-      return
-    }
-    const typeCfg = LANDMARK_TYPES.find((t) => t.key === type)
-    if (!typeCfg) return
-    const key = `${neighborhood.id ?? neighborhood}-${type}`
-    const cacheKey = type === 'street' ? 'streets' : type === 'school' ? 'schools' : type === 'health_center' ? 'healthCenters' : type === 'building' ? 'buildings' : 'markets'
-    if (cacheRef.current[cacheKey][key]) {
-      setOptions((prev) => ({ ...prev, landmarks: cacheRef.current[cacheKey][key] }))
-      return
-    }
-    setLoading((prev) => ({ ...prev, [cacheKey]: true }))
-    setError((prev) => ({ ...prev, [cacheKey]: null }))
-    try {
-      const data = await fetchOptions(typeCfg.endpoint, {
-        county: address.county.name,
-        subcounty: address.subcounty.name,
-        ward: address.ward.name,
+  const loadLandmarkType = useCallback(
+    (typeCfg, county, subcounty, ward, neighborhood) => {
+      if (!neighborhood || !county || !subcounty || !ward) {
+        clearCategory(typeCfg.category)
+        return
+      }
+      return fetchCategory(typeCfg.category, typeCfg.endpoint, {
+        county: county.name,
+        subcounty: subcounty.name,
+        ward: ward.name,
       })
-      cacheRef.current[cacheKey][key] = data
-      setOptions((prev) => ({ ...prev, landmarks: data }))
-    } catch (err) {
-      setError((prev) => ({ ...prev, [cacheKey]: err.message || `Failed to load ${typeCfg.label}s` }))
-    } finally {
-      setLoading((prev) => ({ ...prev, [cacheKey]: false }))
-    }
-  }, [address])
+    },
+    [fetchCategory, clearCategory]
+  )
 
-  // ---------- React to upstream changes ----------
+  // ---------- React to parent changes: fresh reload of child options ----------
 
   useEffect(() => {
-    fetchSubCounties(address.county)
-  }, [address.county, fetchSubCounties])
+    loadCounties()
+  }, [loadCounties])
 
   useEffect(() => {
-    fetchWards(address.county, address.subcounty)
-  }, [address.subcounty, fetchWards])
+    loadSubCounties(address.county)
+  }, [address.county?.id, address.county?.name, loadSubCounties])
 
   useEffect(() => {
-    fetchNeighborhoods(address.county, address.subcounty, address.ward)
-  }, [address.ward, fetchNeighborhoods])
+    loadWards(address.county, address.subcounty)
+  }, [address.county?.id, address.subcounty?.id, address.subcounty?.name, loadWards])
 
   useEffect(() => {
-    if (address.neighborhood) {
-      fetchLandmarks(address.neighborhood, landmarkTypeRef.current)
-    } else {
-      setOptions((prev) => ({ ...prev, landmarks: [] }))
-    }
-  }, [address.neighborhood, fetchLandmarks])
+    loadNeighborhoods(address.county, address.subcounty, address.ward)
+  }, [address.county?.id, address.subcounty?.id, address.ward?.id, address.ward?.name, loadNeighborhoods])
+
+  // The neighborhoods endpoint returns id-less options ({ name } only, from
+  // raw OSM data), so the change key must fall back to the name — otherwise
+  // the landmark effect never re-runs when a neighborhood is selected.
+  const neighborhoodKey =
+    address.neighborhood?.id ?? address.neighborhood?.osm_id ?? address.neighborhood?.name
+
+  useEffect(() => {
+    LANDMARK_TYPES.forEach((typeCfg) => {
+      loadLandmarkType(
+        typeCfg,
+        address.county,
+        address.subcounty,
+        address.ward,
+        address.neighborhood
+      )
+    })
+  }, [
+    neighborhoodKey,
+    address.county?.name,
+    address.subcounty?.name,
+    address.ward?.name,
+    loadLandmarkType,
+  ])
 
   // ---------- Validation ----------
+
+  const landmarkSelections = (address.landmarks || []).filter((l) => l.type !== 'street')
+  const selectedCount = (address.street ? 1 : 0) + landmarkSelections.length
+  const landmarksValid = selectedCount >= MIN_LANDMARK_SELECTIONS
 
   const isValid =
     !!address.county &&
     !!address.subcounty &&
     !!address.ward &&
     !!address.neighborhood &&
-    (!!address.street || !!address.landmark)
+    landmarksValid
 
   // ---------- Handlers ----------
 
-  const handleSelect = (field, option) => (e) => {
-    const next = { ...address, [field]: option }
-    updateField('address', next)
+  const handleSelect = (field, option) => {
+    updateField('address', (prev) => {
+      const next = { ...prev, [field]: option }
+      if (field === 'county') {
+        next.subcounty = null
+        next.ward = null
+        next.neighborhood = null
+        next.street = null
+        next.landmark = null
+        next.landmarks = []
+      } else if (field === 'subcounty') {
+        next.ward = null
+        next.neighborhood = null
+        next.street = null
+        next.landmark = null
+        next.landmarks = []
+      } else if (field === 'ward') {
+        next.neighborhood = null
+        next.street = null
+        next.landmark = null
+        next.landmarks = []
+      } else if (field === 'neighborhood') {
+        next.street = null
+        next.landmark = null
+        next.landmarks = []
+      }
+      return next
+    })
   }
 
-  const handleLandmarkTypeChange = (type) => {
-    landmarkTypeRef.current = type
-    const next = { ...address, landmark: null }
-    updateField('address', next)
-    if (address.neighborhood) {
-      fetchLandmarks(address.neighborhood, type)
-    }
+  const handleLandmarkSelect = (type, option) => {
+    updateField('address', (prev) => {
+      if (type === 'street') {
+        return { ...prev, street: option }
+      }
+      const others = (prev.landmarks || []).filter((l) => l.type !== type)
+      return {
+        ...prev,
+        landmark: null,
+        landmarks: option ? [...others, { type, id: option.id, name: option.name }] : others,
+      }
+    })
   }
 
   const handleText = (field) => (e) => {
-    updateField('address', { ...address, [field]: e.target.value })
-  }
-
-  const handleSelectOption = (field, option) => {
-    const next = { ...address, [field]: option }
-    // Reset downstream when selecting a street/landmark directly
-    if (field === 'street') next.landmark = null
-    if (field === 'landmark') next.street = null
-    updateField('address', next)
+    updateField('address', (prev) => ({ ...prev, [field]: e.target.value }))
   }
 
   // ---------- Render helpers ----------
 
-  const renderSelect = ({ label, value, options: opts, onChange, placeholder, isLoading, err, disabled }) => {
-    const showSpinner = isLoading && !value
+  const renderSelect = ({ label, value, options: opts, onChange, placeholder, isLoading, err, disabled, onRetry }) => {
+    const showSpinner = isLoading && !opts.length
+
+    // Find the selected option's index by matching id/osm_id, falling back to
+    // name match (landmark options from OSM have no id), then reference
+    // equality. Guard against value having no id/osm_id so we don't
+    // accidentally match undefined === undefined against the first option.
+    let selectedIndex = -1
+    if (value) {
+      const valueId = value.id ?? value.osm_id
+      if (valueId != null) {
+        selectedIndex = opts.findIndex((o) => (o.id ?? o.osm_id) === valueId)
+      }
+      if (selectedIndex < 0 && value.name != null && value.name !== '') {
+        selectedIndex = opts.findIndex((o) => o.name === value.name)
+      }
+      if (selectedIndex < 0) {
+        selectedIndex = opts.indexOf(value)
+      }
+    }
+    const currentValue = selectedIndex >= 0 ? String(selectedIndex) : ''
+
     return (
       <div className="space-y-1">
         <label className="block text-xs font-medium text-foreground mb-1">{label}</label>
         <select
-          value={value?.id ?? value ?? ''}
+          value={currentValue !== '-1' ? currentValue : ''}
           onChange={(e) => {
-            const sel = opts.find((o) => String(o.id ?? o.osm_id) === e.target.value)
-            onChange(sel || null)
+            const val = e.target.value
+            if (val === '') {
+              onChange(null)
+              return
+            }
+            const idx = parseInt(val, 10)
+            onChange(opts[idx] || null)
           }}
           disabled={disabled}
           className="w-full min-w-0 px-3 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/20"
@@ -306,10 +343,10 @@ export function AddressStep({ formData, updateField }) {
             <option disabled value="">Loading…</option>
           )}
           {!value && !showSpinner && (
-            <option disabled value>{placeholder}</option>
+            <option disabled value="">{placeholder}</option>
           )}
-          {opts.map((o) => (
-            <option key={o.id ?? o.osm_id} value={o.id ?? o.osm_id}>
+          {opts.map((o, i) => (
+            <option key={o.id ?? o.osm_id ?? `idx-${i}`} value={i}>
               {o.name}
             </option>
           ))}
@@ -317,21 +354,50 @@ export function AddressStep({ formData, updateField }) {
         {err && (
           <div className="flex items-center gap-1 text-xs text-destructive">
             <span>⚠</span>
-            <button
-              onClick={() => {}}
-              className="underline text-destructive hover:text-destructive/80"
-            >
-              {err.includes('Failed to load') ? 'Retry' : err}
-            </button>
+            {err.includes('Failed to load') && onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="underline text-destructive hover:text-destructive/80"
+              >
+                Retry
+              </button>
+            ) : (
+              <span>{err}</span>
+            )}
           </div>
         )}
       </div>
     )
   }
 
+  const renderLandmarkSelect = (typeCfg) => {
+    const category = typeCfg.category
+    const value =
+      typeCfg.key === 'street'
+        ? address.street
+        : landmarkSelections.find((l) => l.type === typeCfg.key) || null
+    return renderSelect({
+      label: typeCfg.label,
+      value,
+      options: options[category],
+      onChange: (o) => handleLandmarkSelect(typeCfg.key, o),
+      placeholder: `Select ${typeCfg.label}`,
+      isLoading: loading[category],
+      err: error[category],
+      onRetry: () =>
+        loadLandmarkType(
+          typeCfg,
+          address.county,
+          address.subcounty,
+          address.ward,
+          address.neighborhood
+        ),
+    })
+  }
+
   return (
     <div className="flex flex-col gap-4 min-w-0 w-full">
-      {/* Cascading location selectors */}
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="col-span-full">
@@ -342,6 +408,8 @@ export function AddressStep({ formData, updateField }) {
               onChange: (o) => handleSelect('county', o),
               placeholder: 'Select county',
               isLoading: loading.counties,
+              err: error.counties,
+              onRetry: loadCounties,
             })}
           </div>
           <div>
@@ -354,6 +422,7 @@ export function AddressStep({ formData, updateField }) {
               isLoading: loading.subcounties,
               disabled: !address.county,
               err: error.subcounties,
+              onRetry: () => loadSubCounties(address.county),
             })}
           </div>
         </div>
@@ -368,6 +437,7 @@ export function AddressStep({ formData, updateField }) {
               isLoading: loading.wards,
               disabled: !address.subcounty,
               err: error.wards,
+              onRetry: () => loadWards(address.county, address.subcounty),
             })}
           </div>
           <div>
@@ -380,47 +450,48 @@ export function AddressStep({ formData, updateField }) {
               isLoading: loading.neighborhoods,
               disabled: !address.ward,
               err: error.neighborhoods,
+              onRetry: () => loadNeighborhoods(address.county, address.subcounty, address.ward),
             })}
           </div>
         </div>
       </div>
 
-      {/* Landmark selector */}
       <div className="space-y-3">
-        <div className="flex flex-wrap gap-1 border border-input rounded-md bg-background p-1">
-          {LANDMARK_TYPES.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => handleLandmarkTypeChange(t.key)}
-              className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
-                landmarkTypeRef.current === t.key
-                  ? 'bg-teal-600 text-white'
-                  : 'text-muted-foreground hover:bg-accent'
+        <div>
+          <label className="block text-xs font-medium text-foreground mb-1">
+            Landmarks <span className="text-muted-foreground font-normal">(select at least {MIN_LANDMARK_SELECTIONS} — one per type)</span>
+          </label>
+          {address.neighborhood ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+              {LANDMARK_TYPES.map((typeCfg) => (
+                <div key={typeCfg.key}>
+                  {renderLandmarkSelect(typeCfg)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-2">
+              Select a neighborhood to choose landmarks.
+            </p>
+          )}
+          {address.neighborhood && (
+            <div
+              className={`mt-3 p-2 rounded-lg border ${
+                landmarksValid
+                  ? 'border-teal-500/20 bg-teal-50/5'
+                  : 'border-destructive/20 bg-destructive/5'
               }`}
             >
-              {t.label}
-            </button>
-          ))}
+              <p className={`text-xs ${landmarksValid ? 'text-teal-700' : 'text-destructive'}`}>
+                {landmarksValid
+                  ? `${selectedCount} of ${LANDMARK_TYPES.length} landmarks selected.`
+                  : `${selectedCount} of ${LANDMARK_TYPES.length} landmarks selected — at least ${MIN_LANDMARK_SELECTIONS} are required.`}
+              </p>
+            </div>
+          )}
         </div>
-        {address.neighborhood && (
-          <div>
-            {renderSelect({
-              label: `${LANDMARK_TYPES.find((t) => t.key === landmarkTypeRef.current)?.label ?? 'Landmark'}`,
-              value: address.landmark,
-              options: options.landmarks,
-              onChange: (o) => handleSelectOption('landmark', { ...o, type: landmarkTypeRef.current }),
-              placeholder: `Select ${LANDMARK_TYPES.find((t) => t.key === landmarkTypeRef.current)?.label ?? 'landmark'}`,
-              isLoading: loading.streets || loading.schools || loading.healthCenters || loading.buildings || loading.markets,
-              err: error.streets || error.schools || error.healthCenters || error.buildings || error.markets,
-            })}
-          </div>
-        )}
-        {!address.neighborhood && (
-          <p className="text-xs text-muted-foreground">Select a neighborhood to choose a landmark.</p>
-        )}
       </div>
 
-      {/* Additional address fields */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-foreground mb-1">House / Plot Number</label>
@@ -444,10 +515,9 @@ export function AddressStep({ formData, updateField }) {
         </div>
       </div>
 
-      {/* Validation hint */}
       {!isValid && (
         <div className="p-2 rounded-lg border border-destructive/20 bg-destructive/5 text-xs text-destructive">
-          Please select County, Sub-County, Ward, Neighborhood, and a Street or Landmark.
+          Please select County, Sub-County, Ward, Neighborhood, and at least {MIN_LANDMARK_SELECTIONS} landmarks (e.g. Street, School, Market).
         </div>
       )}
     </div>

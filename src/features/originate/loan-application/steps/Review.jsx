@@ -42,7 +42,14 @@ export function ReviewStep({ formData }) {
       <div className="bg-accent/40 p-3 rounded-lg border border-border">
         <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Documents</div>
         <ul className="text-sm text-foreground space-y-1">
-          {['id_photo_front', 'payslip', 'bank_statement'].map((key) => (
+          {[
+            'id_photo_front',
+            'id_photo_back',
+            'id_photo_combined',
+            'payslip',
+            'bank_statement',
+            'mpesa_statement',
+          ].map((key) => (
             <li key={key} className="flex items-center gap-2">
               {formData[key] ? (
                 <>
@@ -58,6 +65,32 @@ export function ReviewStep({ formData }) {
             </li>
           ))}
         </ul>
+      </div>
+
+      <div className="bg-accent/40 p-3 rounded-lg border border-border">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Employment &amp; Income</div>
+        <div className="text-sm text-foreground space-y-1">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Employment Status</span>
+            <span>
+              {formData.employmentStatus === 'EMPLOYED'
+                ? 'Employed'
+                : formData.employmentStatus === 'SELF_EMPLOYED'
+                ? 'Self-employed'
+                : '—'}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">
+              {formData.employmentStatus === 'EMPLOYED' ? 'Employer Name' : 'Business Name'}
+            </span>
+            <span>{formData.employerName || '—'}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">Monthly Income (KES)</span>
+            <span>{formData.monthlyIncome ? Number(formData.monthlyIncome).toLocaleString() : '—'}</span>
+          </div>
+        </div>
       </div>
 
       <div className="bg-accent/40 p-3 rounded-lg border border-border">
@@ -80,9 +113,14 @@ export function ReviewStep({ formData }) {
             <span>{formData.address?.neighborhood?.name || '—'}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Street / Landmark</span>
+            <span className="text-muted-foreground">Street / Landmarks</span>
             <span>
-              {formData.address?.street?.name || formData.address?.landmark?.name || '—'}
+              {[
+                formData.address?.street?.name,
+                ...(formData.address?.landmarks || []).map((l) => l.name),
+              ]
+                .filter(Boolean)
+                .join(', ') || '—'}
             </span>
           </div>
           <div className="flex justify-between">
@@ -98,8 +136,7 @@ export function ReviewStep({ formData }) {
 
       <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
         <p className="text-sm text-amber-800">
-          Review your details carefully before submitting. Once submitted, the application will be
-          processed through credit decisioning.
+          Review your details carefully before submitting.
         </p>
       </div>
     </div>
