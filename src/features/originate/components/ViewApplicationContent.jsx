@@ -8,7 +8,7 @@ import {
   FileText, FileSearch, Image as ImageIcon, MapPin, Building2, Home, Hash, Globe, Calendar,
   Banknote, Percent, CircleCheck, User, Users, Mail, Phone, Navigation, Map as MapIcon,
   ZoomIn, ZoomOut, ExternalLink, Briefcase, Wallet, Loader2, AlertCircle, FileX,
-  ShieldCheck, ShieldAlert, ClipboardCheck, BookOpen, XCircle,
+  UserCheck, StickyNote, Shield, Gauge, ClipboardCheck, BookOpen, XCircle,
 } from 'lucide-react'
 import { Badge } from '../../../components/ui/badge'
 import { Skeleton } from '../../../components/ui/skeleton'
@@ -24,9 +24,7 @@ const ICON = 'h-3.5 w-3.5 shrink-0 text-[var(--teal)]'
 // Loan status → badge tone is owned by lib/statuses.js; the panel only asks it
 // for the label/colour so the list and the detail view cannot drift apart.
 
-function GateChip({ ok, label, detail }) {
-  const Icon = ok ? ShieldCheck : ShieldAlert
-
+function GateChip({ ok, label, detail, icon: Icon }) {
   // Title-case a string (first letter of each word uppercase)
   const titleCase = (str) =>
     String(str)
@@ -496,26 +494,31 @@ export function ViewApplicationContent({ applicationId }) {
               ok={lifecycle.gates.kyc}
               label="KYC + sanctions"
               detail={`${lifecycle.kycStatus} · ${lifecycle.sanctionsStatus}`}
+              icon={UserCheck}
             />
             <GateChip
               ok={lifecycle.gates.documents}
               label="Document pack"
               detail={lifecycle.packStatus}
+              icon={StickyNote}
             />
             <GateChip
               ok={lifecycle.gates.fraud}
               label="Fraud screening"
               detail={lifecycle.fraudDecision}
+              icon={Shield}
             />
             <GateChip
               ok={lifecycle.gates.income}
               label="Verified income"
               detail={lifecycle.verifiedIncome}
+              icon={Banknote}
             />
             <GateChip
               ok={lifecycle.gates.bureau}
               label="Bureau score"
               detail={lifecycle.bureauScore}
+              icon={Gauge}
             />
           </div>
 

@@ -8,7 +8,7 @@
 // endpoint only accepts page, page_size, id and id_number.
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react'
-import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, FileText, Gavel, BookOpen, CheckCircle2 } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, FileText, Play, Database, CheckCircle2 } from 'lucide-react'
 import { Skeleton } from '../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../components/ui/empty'
 import { Badge } from '../../components/ui/badge'
@@ -602,11 +602,9 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
                 <button
                   onClick={(e) => { e.stopPropagation(); action.onClick?.(app.id, app) }}
                   disabled={loading || action.variant === 'disabled' || action.loading}
-                  className={`${BUTTON_HOVER_LIFT} btn text-xs px-3 py-1.5 min-w-[90px] ${
-                    action.variant === 'primary' ? '' :
-                    action.variant === 'secondary' ? 'border border-border bg-transparent text-foreground hover:bg-accent' :
-                    'opacity-50 cursor-not-allowed'
-                  } ${action.loading ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  className={`${BUTTON_HOVER_LIFT} btn text-xs px-1 py-1.5 min-w-[90px] 
+                  rounded-lg shadow-[4px_4px_8px_#c7cac7,-4px_-4px_8px_#ffffff] ${action.loading ? 'opacity-70 cursor-not-allowed' : ''} 
+                  ${action.variant === 'primary' ? 'bg-teal-600 text-white hover:bg-teal-700 active:shadow-[inset_4px_4px_8px_#c7cac7,inset_-4px_-4px_8px_#ffffff]' : action.variant === 'secondary' ? 'border border-border bg-background text-foreground hover:bg-accent active:shadow-[inset_4px_4px_8px_#c7cac7,inset_-4px_-4px_8px_#ffffff]' : 'opacity-50 cursor-not-allowed bg-muted/30 text-muted-foreground'}`}
                 >
                   {action.loading ? (
                     <>
@@ -615,9 +613,9 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
                     </>
                   ) : (
                     <>
-                      {action.variant === 'secondary' && <Gavel className="h-3 w-3 mr-1.5" />}
-                      {action.variant === 'primary' && <BookOpen className="h-3 w-3 mr-1.5" />}
-                      {action.variant === 'disabled' && <CheckCircle2 className="h-3 w-3 mr-1.5" />}
+                      {action.variant === 'secondary' && <Play className="h-3 w-3 " />}
+                      {action.variant === 'primary' && <Database className="h-3 w-3 " />}
+                      {action.variant === 'disabled' && <CheckCircle2 className="h-3 w-3 " />}
                       {action.label}
                     </>
                   )}

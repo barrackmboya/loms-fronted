@@ -150,7 +150,7 @@ export default function PortfoliOverview({ userProfile }) {
       <div className="grid" style={FULL_WIDTH_GRID}>
         <Kpi label="Total Customers Monitored" value={(kpis.total_monitored?.value ?? 0).toLocaleString()} note={fmtDelta(kpis.total_monitored?.delta_pct || 0)} />
         <Kpi label="Customers with External Credit" value={(kpis.external_credit?.value ?? 0).toLocaleString()} note={fmtDelta(kpis.external_credit?.delta_pct || 0)} />
-        <Kpi label="Total KCB Exposure" value={money(kpis.total_kcb_exposure?.value || 0)} note={fmtDelta(kpis.total_kcb_exposure?.delta_pct || 0)} />
+        <Kpi label="Total  Exposure" value={money(kpis.total_kcb_exposure?.value || 0)} note={fmtDelta(kpis.total_kcb_exposure?.delta_pct || 0)} />
         <Kpi label="Total External Exposure" value={money(kpis.total_external_exposure?.value || 0)} note={fmtDelta(kpis.total_external_exposure?.delta_pct || 0)} />
         <Kpi label="New Credit Applications" value={(kpis.new_applications?.value ?? 0).toLocaleString()} note={fmtDelta(kpis.new_applications?.delta_pct || 0)} />
         <Kpi label="New Facilities" value={(kpis.new_facilities?.value ?? 0).toLocaleString()} note={fmtDelta(kpis.new_facilities?.delta_pct || 0)} />
@@ -276,7 +276,7 @@ export default function PortfoliOverview({ userProfile }) {
         <table>
           <thead>
             <tr>
-              <th>Customer ID</th><th>Segment</th><th className="right">KCB exposure</th>
+              <th>Customer ID</th><th>Segment</th><th className="right">Exposure</th>
               <th className="right">External exposure</th><th className="right">DPD</th>
               <th className="right">EWI count</th><th className="right">EWI score</th>
               <th>Risk band</th><th>Recommended action</th>

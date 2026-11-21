@@ -108,12 +108,14 @@ main { flex: 1; min-height: 0; overflow-y: auto; width: 98vw; max-width: 1600px;
   box-shadow: inset 3px 3px 7px #d2d9d3, inset -3px -3px 7px #ffffff;
 }
 .panel h2, .soft h2 { font: 600 15px var(--sans); margin-bottom: var(--s2); }
-.eyebrow { color: var(--ink-soft); font-size: 12px; font-weight: 600; margin: var(--s3) 0 var(--s1); }
+.eyebrow { color: var(--ink-soft); 
+  font-size: 12px; font-weight: 600; margin: var(--s3) 0 var(--s1); }
 /* Decision-panel section labels: a subtle full-width band that the dark label
    text contrasts against (the form keeps the bare eyebrow). */
 .eyebrow.band {
   background: #e9efeb;
   padding: 5px 10px;
+  text-transform: uppercase;
   border-radius: 2px;
 }
 .note { color: var(--muted); font-size: 13px; margin: 0 0 var(--s2); }

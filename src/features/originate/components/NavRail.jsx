@@ -86,8 +86,9 @@ export function NavRail({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      <ul className="orig-tree">
-        {TREE.map(({ key, label, icon: Icon, children }) => {
+      <div className="orig-rail-menu">
+        <ul className="orig-tree">
+          {TREE.map(({ key, label, icon: Icon, children }) => {
           const isGroupActive = activeTab === key
           const isOpen = !isCollapsed && open[key]
           const panelId = `orig-tree-${key}`
@@ -135,7 +136,8 @@ export function NavRail({
             </li>
           )
         })}
-      </ul>
+        </ul>
+      </div>
 
       <button
         type="button"

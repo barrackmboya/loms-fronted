@@ -154,7 +154,8 @@
   width: 100%;
 }
 
-/* Fixed dark teal rail. No right border — contrast vs content is the separator.
+/* Fixed dark teal glass rail with a curved leading silhouette. No right border
+   — the glow and contrast vs content are the separator.
    Height capped at 50vh, vertically centered; min-height guarantees
    all items plus the collapse toggle fit. */
 .orig-rail {
@@ -166,15 +167,50 @@
   max-height: 50vh;
   min-height: 620px;
   width: 220px;
-  background: var(--orig-teal-dark);
-  padding: 10px 0;
+  padding: 22px 0;
   z-index: 20;
   display: flex;
   flex-direction: column;
-  transition: width 200ms ease-in-out;
+  overflow: hidden;
+  isolation: isolate;
+
+  /* Curved silhouette: deep elliptical radii on the free (right) edge give
+     the rail a soft bowed contour instead of a hard rectangle. */
+  border-radius: 0 38px 38px 0 / 0 104px 104px 0;
+
+  /* Layered translucent teal glass: lit top-left, evergreen pool bottom-right. */
+  background:
+    radial-gradient(120% 45% at 0% 0%, rgba(79, 209, 197, 0.20) 0%, rgba(79, 209, 197, 0) 60%),
+    radial-gradient(130% 55% at 100% 100%, rgba(79, 209, 197, 0.16) 0%, rgba(79, 209, 197, 0) 68%),
+    linear-gradient(158deg, rgba(30, 66, 60, 0.97) 0%, rgba(23, 52, 47, 0.97) 48%, rgba(14, 38, 34, 0.98) 100%);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow:
+    10px 0 44px -14px rgba(13, 31, 28, 0.55),
+    4px 0 30px -10px rgba(79, 209, 197, 0.22),
+    inset -1px 0 0 rgba(255, 255, 255, 0.20),
+    inset -2px 0 0 rgba(79, 209, 197, 0.10),
+    inset 0 0 0 1px rgba(79, 209, 197, 0.10);
+  transition: width 200ms ease-in-out, border-radius 200ms ease-in-out;
 }
 .orig-rail.is-collapsed {
   width: 100px;
+  /* Collapsed reads as a slim capsule: round the free edge harder. */
+  border-radius: 0 50px 50px 0 / 0 72px 72px 0;
+}
+
+/* Inner reflections that follow the curved silhouette. Sits above the glass
+   background but below the tree (z-index 1) and toggle (z-index 1). */
+.orig-rail-sheen {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    radial-gradient(70% 26% at 2% 2%, rgba(255, 255, 255, 0.20) 0%, rgba(255, 255, 255, 0) 58%),
+    linear-gradient(105deg, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0.09) 50%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(60% 24% at 100% 100%, rgba(79, 209, 197, 0.20) 0%, rgba(79, 209, 197, 0) 72%);
 }
 
 .orig-rail-nav {
@@ -289,24 +325,32 @@
   padding-right: 28px; /* leave room for the dot so text doesn't run under it */
 }
 
-/* Collapse/expand toggle at the bottom of the rail. */
+/* Collapse/expand toggle at the bottom of the rail — frosted glass pill. */
 .orig-rail-toggle {
+  position: relative;
+  z-index: 1;
   margin-top: auto;
   align-self: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  border: 0;
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 100%);
+  color: #eafffb;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 150ms ease-out;
+  box-shadow:
+    0 6px 18px -8px rgba(79, 209, 197, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition: background 150ms ease-out, box-shadow 150ms ease-out;
 }
 .orig-rail-toggle:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.10) 100%);
+  box-shadow:
+    0 8px 22px -8px rgba(79, 209, 197, 0.70),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 .orig-rail-toggle-icon {
   width: 18px;
@@ -376,7 +420,18 @@
 }
 
 /* ---------- Tree navigation ---------- */
+/* Fills the rail above the toggle and vertically centers the menu tree. */
+.orig-rail-menu {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .orig-tree {
+  position: relative;
+  z-index: 1;
   list-style: none;
   margin: 0;
   padding: 0 12px;
@@ -393,14 +448,17 @@
   width: 100%;
   border: 0;
   background: none;
-  border-radius: 8px;
+  border-radius: 12px;
   color: rgba(255, 255, 255, 0.7);
   font-family: var(--sans);
   text-align: left;
   cursor: pointer;
-  transition: background 150ms ease-out, color 150ms ease-out;
+  transition: background 150ms ease-out, color 150ms ease-out, box-shadow 150ms ease-out;
 }
-.orig-tree-node:hover { background: rgba(255, 255, 255, 0.06); }
+.orig-tree-node:hover {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
 .orig-tree-node:focus-visible {
   outline: 2px solid var(--orig-accent);
   outline-offset: -2px;
@@ -417,9 +475,13 @@
   color: rgba(255, 255, 255, 0.9);
 }
 .orig-tree-node.is-parent.is-active {
-  background: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24) 0%, rgba(255, 255, 255, 0.12) 100%);
   color: #fff;
   font-weight: 600;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.26),
+    0 8px 20px -8px rgba(79, 209, 197, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 .orig-tree-chevron {
   width: 16px;
@@ -453,7 +515,7 @@
   content: '';
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  border-left: 1px solid rgba(79, 209, 197, 0.18);
 }
 .orig-tree-leaf:first-child::before { top: 4px; }
 /* last child: trunk stops at the elbow */
@@ -464,7 +526,7 @@
   position: absolute;
   left: 0; top: 50%;
   width: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-top: 1px solid rgba(79, 209, 197, 0.18);
 }
 
 .orig-tree-node.is-child {
@@ -478,9 +540,12 @@
   color: rgba(255, 255, 255, 0.55);
 }
 .orig-tree-node.is-child.is-active {
-  background: rgba(79, 209, 197, 0.12);
-  color: var(--orig-accent);
+  background: linear-gradient(180deg, rgba(79, 209, 197, 0.20) 0%, rgba(79, 209, 197, 0.10) 100%);
+  color: #d9fff9;
   font-weight: 500;
+  box-shadow:
+    inset 0 0 0 1px rgba(79, 209, 197, 0.24),
+    0 6px 18px -10px rgba(79, 209, 197, 0.55);
 }
 .orig-tree-node.is-child.is-active .orig-tree-icon { color: var(--orig-accent); }
 
@@ -492,16 +557,31 @@
   width: 2px;
   border-radius: 2px;
   background: var(--orig-accent);
+  box-shadow: 0 0 8px rgba(79, 209, 197, 0.7);
 }
 
 /* ---------- Collapsed rail: parent icons only ---------- */
-.orig-rail.is-collapsed .orig-tree { padding: 0 10px; }
+.orig-rail.is-collapsed .orig-tree {
+  padding: 0 10px;
+  /* More breathing room between the icon tiles in the slim rail. */
+  gap: 18px;
+}
 .orig-rail.is-collapsed .orig-tree-node.is-parent {
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 7px;
   padding: 10px 0;
+}
+/* Inactive tiles get a faint glass outline so they read as buttons in the
+   slim rail; the active tile keeps its lit pill instead. */
+.orig-rail.is-collapsed .orig-tree-node.is-parent:not(.is-active) {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+}
+.orig-rail.is-collapsed .orig-tree-node.is-parent:not(.is-active):hover {
+  border-color: rgba(79, 209, 197, 0.35);
+  background: rgba(255, 255, 255, 0.08);
 }
 .orig-rail.is-collapsed .orig-tree-node.is-parent .orig-tree-label {
   flex: 0 0 auto;
