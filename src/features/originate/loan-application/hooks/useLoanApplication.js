@@ -1,12 +1,62 @@
 // Loan application hook — consumes POST/GET /api/origination/loanapplication/
-// POST: creates a new loan application from form state.
-// GET:  fetches a single application by ID for the SlidePanel detail view.
+// and GET /api/applications/<id>.
 //
-// Uses the project's existing fetch wrapper (lib/api.js) — no new HTTP client.
+// The wizard state is snake_case (see ../lib/form.js). This hook builds the
+// canonical flat payload, converts the liveness data URLs into the three
+// biometric files the backend expects, and sends multipart with an
+// Idempotency-Key so a retried submit cannot duplicate the application.
 
 import { useCallback, useState } from 'react'
-import { api, authHeaders } from '../../../../lib/api'
+import { api } from '../../../../lib/api'
 import { toast } from '../../../../components/ui/sonner'
+import { buildApplicationPayload } from '../lib/form'
+
+const isFile = (value) =>
+  typeof File !== 'undefined' && value instanceof File
+
+async function dataUrlToFile(dataUrl, filename) {
+  if (!dataUrl) return null
+  if (isFile(dataUrl)) return dataUrl
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null
+
+  const match = dataUrl.match(/^data:(.*?);base64,(.*)$/)
+  if (!match) return null
+  const [, mime, base64] = match
+  try {
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i)
+    return new File([bytes], filename, { type: mime || 'image/jpeg' })
+  } catch {
+    return null
+  }
+}
+
+function appendPayload(formData, payload) {
+  for (const [key, value] of Object.entries(payload)) {
+    if (value === undefined || value === null) continue
+    if (isFile(value)) {
+      formData.append(key, value)
+    } else if (typeof value === 'object') {
+      formData.append(key, JSON.stringify(value))
+    } else {
+      formData.append(key, String(value))
+    }
+  }
+}
+
+async function withBiometrics(payload, formData) {
+  const photos = formData?.personal?.photos || {}
+  const files = await Promise.all([
+    dataUrlToFile(photos.front, 'liveness-front.jpg'),
+    dataUrlToFile(photos.left, 'liveness-left.jpg'),
+    dataUrlToFile(photos.right, 'liveness-right.jpg'),
+  ])
+  files.forEach((file, index) => {
+    if (file) payload[`biometric_photo_${index + 1}`] = file
+  })
+  return payload
+}
 
 export function useLoanApplication() {
   const [submitting, setSubmitting] = useState(false)
@@ -14,23 +64,31 @@ export function useLoanApplication() {
   const [error, setError] = useState(null)
   const [application, setApplication] = useState(null)
   const [applicationId, setApplicationId] = useState(null)
+  const [reference, setReference] = useState(null)
 
-  // ---------- POST: create application (JSON) ----------
+  // ---------- POST: create application (JSON, file-less fallback) ----------
 
-  const submitApplication = useCallback(async (formData) => {
+  const submitApplication = useCallback(async (wizardState, options = {}) => {
     setSubmitting(true)
     setError(null)
     setApplicationId(null)
+    setReference(null)
 
     try {
-      const payload = mapFormToPayload(formData)
-
-      const result = await api.post('/api/origination/loanapplication/', payload)
-
-      const id = result.id ?? result.application_id ?? null
+      const payload = buildApplicationPayload(wizardState, options)
+      const jsonPayload = Object.fromEntries(
+        Object.entries(payload).filter(([, value]) => !isFile(value)),
+      )
+      const result = await api.post('/api/origination/loanapplication/', jsonPayload)
+      const id = result.application_id ?? result.id ?? null
       setApplicationId(id)
+      setReference(result.reference ?? null)
       setApplication(result)
-      toast.success(`Application submitted successfully (ID: ${id || '—'})`)
+      toast.success(
+        result.reference
+          ? `Application ${result.reference} submitted`
+          : `Application submitted successfully (ID: ${id || '—'})`,
+      )
       return result
     } catch (e) {
       const msg = e.message || 'Failed to submit application'
@@ -42,46 +100,39 @@ export function useLoanApplication() {
     }
   }, [])
 
-  // ---------- POST: create application (multipart/form-data) ----------
+  // ---------- POST: create application (multipart) ----------
 
-  const submitApplicationMultipart = useCallback(async (formData) => {
+  const submitApplicationMultipart = useCallback(async (wizardState, options = {}) => {
+    const { channel = 'APP', idempotencyKey } = options
     setSubmitting(true)
     setError(null)
     setApplicationId(null)
+    setReference(null)
 
     try {
-      const payload = mapFormToPayload(formData)
+      const payload = await withBiometrics(
+        buildApplicationPayload(wizardState, { channel }),
+        wizardState,
+      )
 
-      // Build FormData for file upload
-      const fd = new FormData()
-      Object.entries(payload).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-          if (value instanceof File) {
-            fd.append(key, value)
-          } else if (typeof value === 'object') {
-            fd.append(key, JSON.stringify(value))
-          } else {
-            fd.append(key, String(value))
-          }
-        }
-      })
+      const body = new FormData()
+      appendPayload(body, payload)
 
-      const response = await fetch('/api/origination/loanapplication/', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: fd,
-      })
+      const result = await api.postMultipart(
+        '/api/origination/loanapplication/',
+        body,
+        { idempotencyKey },
+      )
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.detail || errData.message || `HTTP ${response.status}`)
-      }
-
-      const result = await response.json()
-      const id = result.id ?? result.application_id ?? null
+      const id = result.application_id ?? result.id ?? null
       setApplicationId(id)
+      setReference(result.reference ?? null)
       setApplication(result)
-      toast.success(`Application submitted successfully (ID: ${id || '—'})`)
+      toast.success(
+        result.reference
+          ? `Application ${result.reference} submitted (status: ${result.status || '—'})`
+          : `Application submitted successfully (ID: ${id || '—'})`,
+      )
       return result
     } catch (e) {
       const msg = e.message || 'Failed to submit application'
@@ -93,18 +144,17 @@ export function useLoanApplication() {
     }
   }, [])
 
-  // ---------- GET: fetch single application by ID ----------
+  // ---------- GET: fetch a single application ----------
 
   const fetchApplication = useCallback(async (id) => {
     if (!id) return null
     setFetching(true)
     setError(null)
     try {
-      const response = await api.get(`/api/origination/loanapplication/?id=${id}`)
-      // Backend returns { api_code, success, data }
-      const data = response.data ?? response
+      const data = await api.retrieveApplication(id)
       setApplication(data)
       setApplicationId(data.id ?? id)
+      setReference(data.reference ?? null)
       return data
     } catch (e) {
       const msg = e.message || 'Failed to load application'
@@ -115,131 +165,25 @@ export function useLoanApplication() {
     }
   }, [])
 
-  // ---------- helpers ----------
-
   const clearError = useCallback(() => setError(null), [])
   const clearApplication = useCallback(() => {
     setApplication(null)
     setApplicationId(null)
+    setReference(null)
     setError(null)
   }, [])
 
   return {
-    // submission
     submitApplication,
     submitApplicationMultipart,
     submitting,
     error,
     applicationId,
+    reference,
     application,
-    // fetching
     fetchApplication,
     fetching,
-    // lifecycle helpers
     clearError,
     clearApplication,
   }
-}
-
-/**
- * Map the flat form state object to the LoanApplicationSubmitSerializer payload.
- * Only includes fields that have values, so optional fields are omitted when empty.
- */
-function mapFormToPayload(formData) {
-  if (!formData) return {}
-
-  const payload = {}
-
-  // Channel
-  if (formData.channel) payload.channel = formData.channel
-
-  // Identity / personal
-  if (formData.nationalId) payload.id_number = formData.nationalId
-  if (formData.first_name) payload.first_name = formData.first_name
-  else if (formData.firstName) payload.first_name = formData.firstName
-  if (formData.last_name) payload.last_name = formData.last_name
-  else if (formData.lastName) payload.last_name = formData.lastName
-  if (formData.other_names) payload.middle_name = formData.other_names
-  else if (formData.middleName) payload.middle_name = formData.middleName
-  if (formData.email) payload.email = formData.email
-  if (formData.phone) payload.phone = formData.phone
-
-  // Address
-  if (formData.physical_address) {
-    const a = formData.physical_address
-    if (a.building_or_premise) payload.building_or_premise = a.building_or_premise
-    if (a.unit_or_house_number) payload.unit_or_house_number = a.unit_or_house_number
-    if (a.street_or_road_name) payload.street_or_road_name = a.street_or_road_name
-    if (a.estate_or_neighborhood) payload.estate_or_neighborhood = a.estate_or_neighborhood
-    if (a.sub_county) payload.sub_county = a.sub_county
-    if (a.ward) payload.ward = a.ward
-    if (a.landmark_school) payload.landmark_school = a.landmark_school
-    if (a.landmark_health) payload.landmark_health = a.landmark_health
-    if (a.landmark_church) payload.landmark_church = a.landmark_church
-  } else if (formData.address) {
-    const a = formData.address
-    if (a.county) payload.county = a.county.name ?? a.county
-    if (a.subcounty) payload.sub_county = a.subcounty.name ?? a.subcounty
-    if (a.ward) payload.ward = a.ward.name ?? a.ward
-    if (a.neighborhood) payload.estate_or_neighborhood = a.neighborhood.name ?? a.neighborhood
-    if (a.street) payload.street_or_road_name = a.street.name ?? a.street
-    if (a.landmarks && Array.isArray(a.landmarks)) {
-      a.landmarks.forEach((lm) => {
-        const lmName = lm?.name
-        if (!lmName) return
-        if (lm.type === 'health_center') payload.landmark_health = lmName
-        else if (lm.type === 'school') payload.landmark_school = lmName
-        else if (lm.type === 'market') payload.landmark_church = lmName // closest available field
-        else if (lm.type === 'building') payload.building_or_premise = lmName
-      })
-    } else if (a.landmark) {
-      const lm = a.landmark
-      const lmName = lm.name ?? lm
-      if (lm.type === 'health_center') payload.landmark_health = lmName
-      else if (lm.type === 'school') payload.landmark_school = lmName
-      else if (lm.type === 'market') payload.landmark_church = lmName // closest available field
-    }
-    if (a.plot_number) payload.unit_or_house_number = a.plot_number
-    if (a.postal_code) payload.postal_code = a.postal_code
-  } else {
-    // Flat fallback keys
-    if (formData.building_or_premise) payload.building_or_premise = formData.building_or_premise
-    if (formData.unit_or_house_number) payload.unit_or_house_number = formData.unit_or_house_number
-    if (formData.street_or_road_name) payload.street_or_road_name = formData.street_or_road_name
-    if (formData.estate_or_neighborhood) payload.estate_or_neighborhood = formData.estate_or_neighborhood
-    if (formData.sub_county) payload.sub_county = formData.sub_county
-    if (formData.ward) payload.ward = formData.ward
-  }
-
-  // Loan
-  if (formData.loan_product) payload.loan_product = formData.loan_product
-  if (formData.amount_requested !== undefined && formData.amount_requested !== null)
-    payload.requested_amount = formData.amount_requested
-  if (formData.loan_term !== undefined && formData.loan_term !== null)
-    payload.tenure_months = formData.loan_term
-
-  // Employment
-  if (formData.employmentStatus) payload.employment_status = formData.employmentStatus
-  if (formData.employerName) payload.employer_name = formData.employerName
-  if (formData.monthlyIncome !== undefined && formData.monthlyIncome !== null)
-    payload.monthly_income = formData.monthlyIncome
-  if (formData.payslipDate) payload.payslip_date = formData.payslipDate
-
-  // Documents (files) — include only when present
-  if (formData.id_photo_combined) {
-    payload.id_photo_front = formData.id_photo_combined
-    payload.id_photo_back = formData.id_photo_combined
-  } else {
-    if (formData.id_photo_front) payload.id_photo_front = formData.id_photo_front
-    if (formData.id_photo_back) payload.id_photo_back = formData.id_photo_back
-  }
-  if (formData.kra_certificate) payload.kra_certificate = formData.kra_certificate
-  if (formData.biometric_photo_1) payload.biometric_photo_1 = formData.biometric_photo_1
-  if (formData.payslip) payload.payslip = formData.payslip
-  if (formData.mpesa_statement) payload.mpesa_statement = formData.mpesa_statement
-  if (formData.bank_statement) payload.bank_statement = formData.bank_statement
-  if (formData.utility_bill) payload.utility_bill = formData.utility_bill
-  if (formData.proof_of_business) payload.proof_of_business = formData.proof_of_business
-
-  return payload
 }

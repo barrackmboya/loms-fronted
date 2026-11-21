@@ -35,6 +35,10 @@
   --display: 'Fraunces', Georgia, serif;
 
   --s1: 6px; --s2: 12px; --s3: 18px; --s4: 26px;
+
+  /* KPI big-number font: scales with the viewport, floored so long figures
+     never spill their card, capped so they stay large on wide screens. */
+  --kpi-value: clamp(13px, 3.5vw, 27px);
 }
 
 * { box-sizing: border-box; }
@@ -81,7 +85,7 @@ button { font: inherit; }
 }
 .slide-in { animation: slide-in .3s ease-out; }
 
-main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4) 22px 48px; max-width: 1200px; margin: 0 auto; }
+main { flex: 1; min-height: 0; overflow-y: auto; width: 98vw; max-width: 1600px; margin: 0 auto; padding: var(--s4) 0 48px 0; }
 
 /* ---------- surfaces ---------- */
 .panel { background: var(--panel); border: 1px solid var(--line); padding: var(--s3); }
@@ -120,7 +124,14 @@ main { flex: 1; min-height: 0; overflow-y: auto; padding: var(--s4) 22px 48px; m
 
 /* ---------- data ---------- */
 .kpi small { color: var(--muted); font-size: 12px; }
-.kpi b { display: block; font: 500 27px/1.2 var(--display); margin: 5px 0 2px; }
+.kpi b {
+  display: block;
+  font: 500 var(--kpi-value)/1.2 var(--display);
+  margin: 5px 0 2px;
+  /* A 15-digit exposure must never burst its card: shrink with the viewport,
+     and wrap as a last resort instead of spilling. */
+  overflow-wrap: anywhere;
+}
 
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th { text-align: left; font-weight: 500; color: var(--muted); padding: 7px 8px; border-bottom: 1px solid var(--line); }

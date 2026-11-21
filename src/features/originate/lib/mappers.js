@@ -70,12 +70,17 @@ export function mapLoanApplication(raw) {
     name: fullName,
     reference: raw.reference || '',
     product: loanProduct.name || '—',
+    productClass: raw.product_class || loanProduct.product_class || '',
+    segment: raw.segment || loanProduct.segment || '',
     amount: raw.requested_amount ?? 0,
     tenure: raw.loan_term ?? 0,
     channel: raw.channel || '—',
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
     status: raw.status,
+    packStatus: raw.pack_status || '',
+    missingDocuments: Array.isArray(raw.missing_documents) ? raw.missing_documents : [],
+    kycStatus: person.kyc_status ?? raw.kyc_status ?? raw.party?.kyc_status ?? '',
     person,
   }
 }
@@ -301,6 +306,24 @@ export function mapKycReport(raw) {
   const currentEmployment = (Array.isArray(p.employment) ? p.employment[0] : null) || null
   const knownHistory = (Array.isArray(p.known_employment_history) ? p.known_employment_history[0] : null) || {}
 
+  // Lifecycle + gate evidence (ORG-02, DEC-01). The detail panel shows what the
+  // backend will check before it agrees to score or book the file.
+  const kycStatus = person.kyc_status || app.kyc_status || app.party?.kyc_status || ''
+  const sanctionsStatus = person.sanctions_status || app.sanctions_status || ''
+  const packStatus = app.pack_status || ''
+  const fraudDecision = app.fraud_decision || ''
+  const verifiedIncome = readAmount(app.verified_income)
+  const bureauScore = app.bureau_score == null ? null : Number(app.bureau_score)
+  const missingDocuments = Array.isArray(app.missing_documents) ? app.missing_documents : []
+  const gates = {
+    kyc: String(kycStatus).toUpperCase() === 'VERIFIED' && String(sanctionsStatus).toUpperCase() === 'CLEAR',
+    documents: String(packStatus).toUpperCase() === 'ACCEPTED',
+    fraud: !!fraudDecision && String(fraudDecision).toUpperCase() !== 'BLOCK',
+    income: verifiedIncome != null && verifiedIncome > 0,
+    bureau: bureauScore != null,
+  }
+  const readyForDecision = gates.kyc && gates.documents && gates.fraud && gates.income && gates.bureau
+
   return {
     customer: fullName,
     report: {
@@ -314,6 +337,8 @@ export function mapKycReport(raw) {
     loan: {
       product: dash(product.name),
       productType: dash(product.product_type),
+      productClass: dash(app.product_class || product.product_class),
+      segment: dash(app.segment || product.segment),
       currency,
       amount: formatMoney(raw.requested_amount ?? app.requested_amount, currency),
       term: raw.loan_term ? `${raw.loan_term} ${raw.loan_term === 1 ? 'month' : 'months'}` : '—',
@@ -322,8 +347,38 @@ export function mapKycReport(raw) {
       fee: dash(product.processing_fee),
       cost: percent(product.cost_of_credit),
       status: dash(app.status) === '—' ? '—' : prettify(app.status),
+      statusRaw: app.status || '',
+      reference: dash(app.reference ?? raw.loan_aplication_ref),
       submitted: formatDate(app.created_at),
       updated: formatDate(app.updated_at),
+    },
+    lifecycle: {
+      statusRaw: app.status || '',
+      reference: dash(app.reference ?? raw.loan_aplication_ref),
+      productClass: dash(app.product_class || product.product_class),
+      segment: dash(app.segment || product.segment),
+      kycStatus: dash(kycStatus),
+      sanctionsStatus: dash(sanctionsStatus),
+      packStatus: dash(packStatus),
+      missingDocuments,
+      fraudDecision: dash(fraudDecision),
+      conditionsStatus: dash(app.conditions_status),
+      verifiedIncome: verifiedIncome == null ? '—' : formatMoney(verifiedIncome, currency),
+      bureauScore: bureauScore == null ? '—' : String(bureauScore),
+      collateralValue: readAmount(app.collateral_value) ? formatMoney(app.collateral_value, currency) : '—',
+      decisionAt: app.decision_at ? formatDate(app.decision_at) : '—',
+      readyForDecision,
+      gates,
+    },
+    declarations: {
+      monthlyExpenses: formatMoney(app.monthly_expenses, currency),
+      dependents: app.dependents ?? 0,
+      rentOrHousing: formatMoney(app.rent_or_housing, currency),
+      otherIncome: formatMoney(app.other_income, currency),
+      existingDebtService: formatMoney(app.existing_debt_service, currency),
+      existingDebtBreakdown: Array.isArray(app.existing_debt_breakdown)
+        ? app.existing_debt_breakdown
+        : [],
     },
     personal: {
       firstName: dash(p.firstName),

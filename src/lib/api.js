@@ -40,18 +40,60 @@ const post = (u, body) => {
     body: body ? JSON.stringify(body) : undefined,
   }).then(json)
 }
+
+// Multipart submit. Never set Content-Type — the browser adds the boundary.
+// `idempotencyKey` makes a retried submit return the original application.
+const postMultipart = (u, formData, { idempotencyKey } = {}) => {
+  const headers = authHeaders()
+  if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey
+  return fetch(u, { method: 'POST', headers, body: formData }).then(json)
+}
+
+const isFile = (value) => typeof File !== 'undefined' && value instanceof File
+
+// Plain JSON → FormData. File objects ride as uploads; nested objects become
+// JSON strings, which is the contract the origination view's `_as_json_list`
+// and JSON fields expect from multipart form data.
+const toMultipart = (payload = {}) => {
+  const form = new FormData()
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value === undefined || value === null) return
+    if (isFile(value)) form.append(key, value)
+    else if (typeof value === 'object') form.append(key, JSON.stringify(value))
+    else form.append(key, String(value))
+  })
+  return form
+}
+
+// --- Origination application (the only canonical create/decide/book path) ----
+const ORIGINATION = '/api/origination/loanapplication/'
+
+const retrieveApplication = async (id) => {
+  const response = await get(`${ORIGINATION}?id=${encodeURIComponent(id)}`)
+  // The detail endpoint answers with the api envelope { api_code, data }.
+  return response?.data ?? response
+}
+
+const createApplication = (payload) => {
+  const form = toMultipart(payload)
+  return postMultipart(ORIGINATION, form, { idempotencyKey: payload?.idempotency_key })
+}
+
 export const api = {
   get,
+  post,
+  postMultipart,
   login: (credentials) => post('/api/auth/login/', credentials),
   refreshToken: (tokenData) => post('/api/auth/token/refresh/', tokenData),
-  createApplication: (payload) => post('/api/applications', payload),
+  // POST multipart /api/origination/loanapplication/ — documents are uploaded
+  // with the application creation, not afterwards.
+  createApplication,
   // --- Application record (OriginateDetail.jsx) ---------------------------
-  // GET /api/applications/<id>/ — the detail record; documents are embedded.
-  retrieveApplication: (id) => get(`/api/applications/${id}/`),
-  // The backend has no dedicated files endpoint — document rows ride on the
-  // application detail (DocumentSerializer: id, doc_type, sha256, tamper_score,
-  // metadata_anomaly, accepted). Return them so callers get an array.
-  applicationFiles: (id) => get(`/api/applications/${id}/`).then((a) => a.documents || []),
+  // GET /api/origination/loanapplication/?id=<id> — the detail record;
+  // PersonDocument pack attachments are embedded as `appl_documents`.
+  retrieveApplication,
+  applicationFiles: (id) =>
+    retrieveApplication(id).then((a) => a.appl_documents || a.documents || []),
   // GET /api/applications/<id>/decision — single DecisionRecord, or 409
   // not_decided when none exists. OriginateDetail renders a list, so wrap a
   // lone record; an application with no decision yet is an empty list, not an
@@ -116,8 +158,25 @@ export const api = {
   // payload: application + product details, personal details, contacts,
   // documents, residential + employment history. Mapped via mapKycReport().
   kycReport: (id) => get(`/api/origination/reports/kyc/?id=${encodeURIComponent(id)}`),
-  decide: (id) => post(`/api/applications/${id}/decision`),
-  book: (id) => post(`/api/applications/${id}/book`),
+  // GET /api/origination/loan-products/ — the active catalogue. The endpoint
+  // may answer as a bare array, {data}, {results} or the api envelope.
+  loanProducts: async () => {
+    const r = await get('/api/origination/loan-products/?page_size=200')
+    if (Array.isArray(r)) return r
+    if (Array.isArray(r?.data)) return r.data
+    if (Array.isArray(r?.results)) return r.results
+    return []
+  },
+  decide: (id) => post(`${ORIGINATION}${id}/decision/`),
+  book: (id) => post(`${ORIGINATION}${id}/book/`),
+  // GET /api/origination/loanapplication/<id>/decision/ — persisted decision
+  // plus the evidence blocks (income_analysis + document_analysis) the detail
+  // panel renders. Scoped to origination so an origination operator can read it.
+  decisionDetail: (id) => get(`${ORIGINATION}${id}/decision/`),
+  // GET /api/applications/<id>/income-analysis — latest persisted M-Pesa
+  // ExtractionRun. The decision response embeds the same block as
+  // `income_analysis`, so the panel can render FCF values without re-upload.
+  incomeAnalysis: (id) => get(`/api/applications/${id}/income-analysis`),
   advanceMonth: () => post('/api/servicing/advance'),
   seed: () => post('/api/seed'),
   seedDashboard: () => post('/api/demo/dashboard/seed'),
@@ -148,5 +207,10 @@ export const api = {
   monitoringMetrics: () => get('/api/monitoring/metrics'),
   // Password reset
   passwordReset: (email) => post('/api/auth/password-reset/', { email }),
+  // Login OTP verification — uses login-specific endpoint
   verifyOtp: (email, otp) => post('/api/auth/verify-otp/', { email, otp }),
+  // Contact verification (email + phone) — uses general endpoint, not login-specific
+  verifyContactOtp: (contact, otp) => post('/api/auth/verify-contact-otp/', { contact, otp }),
+  sendEmailOtp: (email) => post('/api/auth/send-email-otp/', { email }),
+  sendSmsOtp: (phone) => post('/api/auth/send-sms-otp/', { phone }),
 }

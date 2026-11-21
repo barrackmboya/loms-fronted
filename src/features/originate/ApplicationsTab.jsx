@@ -8,7 +8,7 @@
 // endpoint only accepts page, page_size, id and id_number.
 
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, forwardRef } from 'react'
-import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, FileText } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Filter, X, Loader2, Plus, AlertCircle, FileText, Gavel, BookOpen, CheckCircle2 } from 'lucide-react'
 import { Skeleton } from '../../components/ui/skeleton'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from '../../components/ui/empty'
 import { Badge } from '../../components/ui/badge'
@@ -21,6 +21,14 @@ import { ROW_STAGGER, FADE_IN, BUTTON_HOVER_LIFT, ROW_FLASH_SUCCESS } from './li
 import { api } from '../../lib/api'
 import { mapLoanApplication } from './lib/mappers'
 import { decisionStore } from './lib/decisionStore'
+import {
+  STATUS_META,
+  canBook,
+  canRunDecision,
+  statusLabel,
+  statusTone,
+  isTerminal,
+} from './lib/statuses'
 import { toast } from 'sonner'
 
 const SORT_OPTIONS = [
@@ -39,8 +47,13 @@ const DEFAULT_FILTERS = {
   dateFrom: '',
   dateTo: '',
   product: '',
+  status: '',
   sort: '-created_at',
 }
+
+const STATUS_OPTIONS = Object.entries(STATUS_META)
+  .map(([value, meta]) => ({ value, label: meta.label }))
+  .sort((a, b) => a.label.localeCompare(b.label))
 
 // Backend sort param -> mapped application field
 const SORT_FIELD_MAP = {
@@ -76,6 +89,8 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
   const [emptyRefetchAttempts, setEmptyRefetchAttempts] = useState(0)
   // Track in-flight decision requests per application ID (per-row disable)
   const [running, setRunning] = useState(new Set())
+  // Track in-flight booking requests per application ID
+  const [booking, setBooking] = useState(new Set())
   // ID of the application currently being viewed in the detail dialog
   const [viewAppId, setViewAppId] = useState(null)
 
@@ -143,7 +158,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
   const applyFilters = useCallback(
     (apps, currentFilters) => {
       let result = apps
-      const { search, dateFrom, dateTo, product, sort } = currentFilters
+      const { search, dateFrom, dateTo, product, status, sort } = currentFilters
 
       if (search) {
         const term = search.toLowerCase()
@@ -161,6 +176,9 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
       }
       if (product) {
         result = result.filter((app) => app.product === product)
+      }
+      if (status) {
+        result = result.filter((app) => String(app.status || '').toUpperCase() === status)
       }
 
       if (sort) {
@@ -253,6 +271,11 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
     setFilters((prev) => ({ ...prev, product: e.target.value }))
   }, [])
 
+  // Handle status filter change
+  const handleStatusChange = useCallback((e) => {
+    setFilters((prev) => ({ ...prev, status: e.target.value }))
+  }, [])
+
   // Handle sort change
   const handleSortChange = useCallback((e) => {
     setFilters((prev) => ({ ...prev, sort: e.target.value }))
@@ -270,7 +293,11 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
     refetch()
   }, [refetch])
 
-  // Run decision for a single application — per-row in-flight tracking
+  // Run decision for a single application — per-row in-flight tracking.
+  // POST /api/origination/loanapplication/{id}/decision/ (via api.decide). The
+  // backend completes extraction for any document without an ExtractionRun and
+  // refreshes the document pack before scoring, so no separate analysis call is
+  // needed here. The response embeds `income_analysis` (FCF values).
   const handleRunDecision = useCallback(async (id, app) => {
     if (running.has(id)) return
     setRunning((prev) => new Set([...prev, id]))
@@ -300,12 +327,28 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
       } else {
         onDecisionComplete?.()
       }
+      refetch()
     } catch (e) {
       toast.error("Decision failed", { description: e.message })
     } finally {
       setRunning((prev) => { const next = new Set(prev); next.delete(id); return next })
     }
-  }, [onDecisionComplete])
+  }, [onDecisionComplete, refetch])
+
+  // Book an approved application — drives the backend booking gate.
+  const handleBook = useCallback(async (id) => {
+    if (booking.has(id)) return
+    setBooking((prev) => new Set([...prev, id]))
+    try {
+      await api.book(id)
+      toast.success('Application booked')
+      refetch()
+    } catch (e) {
+      toast.error('Booking failed', { description: e.message })
+    } finally {
+      setBooking((prev) => { const next = new Set(prev); next.delete(id); return next })
+    }
+  }, [booking, refetch])
 
   // Check if any filters are active (besides default sort)
   const hasActiveFilters = useMemo(() => {
@@ -314,6 +357,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
       filters.dateFrom ||
       filters.dateTo ||
       filters.product ||
+      filters.status ||
       (filters.sort && filters.sort !== '-created_at')
     )
   }, [debouncedSearchValue, filters])
@@ -326,7 +370,30 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
     formattedTenure: app.tenure ? `${app.tenure} mo` : '—',
     applicantName: app.name || '—',
     productName: app.product || '—',
+    reference: app.reference || '—',
+    statusText: statusLabel(app.status),
+    statusTone: statusTone(app.status),
+    canDecide: canRunDecision(app.status),
+    canBeBooked: canBook(app.status),
+    statusKey: String(app.status || '').toUpperCase(),
   }), [])
+
+  // Determine the single action button for each status
+  const getActionButton = useCallback((app) => {
+    const status = app.statusKey
+    if (status === 'BOOKED') {
+      return { label: 'Booked', variant: 'disabled', onClick: null, loading: false }
+    }
+    if (status === 'READY_TO_BOOK') {
+      return { label: 'Book', variant: 'primary', onClick: handleBook, loading: booking.has(app.id) }
+    }
+    // CAPTURED (PENDING) and other decidable statuses → Run Decision
+    if (app.canDecide) {
+      return { label: 'Run Decision', variant: 'secondary', onClick: handleRunDecision, loading: running.has(app.id) }
+    }
+    // Terminal/closed states with no action
+    return null
+  }, [booking, running, handleBook, handleRunDecision])
 
   const formattedApps = useMemo(() => applications.map(formatApplication), [applications, formatApplication])
 
@@ -352,11 +419,13 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
       {[...Array(5)].map((_, i) => (
         <tr key={i} className="h-11">
           <td className="px-3 py-2"><Skeleton className="h-4 w-24" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-4 w-28" /></td>
           <td className="px-3 py-2"><Skeleton className="h-4 w-32" /></td>
           <td className="px-3 py-2"><Skeleton className="h-4 w-28" /></td>
           <td className="px-3 py-2 text-right font-mono tabular-nums"><Skeleton className="h-4 w-20 mx-auto" /></td>
           <td className="px-3 py-2 text-right font-mono tabular-nums"><Skeleton className="h-4 w-16 mx-auto" /></td>
           <td className="px-3 py-2"><Skeleton className="h-6 w-24 mx-auto" /></td>
+          <td className="px-3 py-2"><Skeleton className="h-7 w-40 mx-auto" /></td>
         </tr>
       ))}
     </tbody>
@@ -366,7 +435,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
   const renderEmptyState = () => (
     <tbody>
       <tr>
-        <td colSpan={6} className="py-16">
+        <td colSpan={8} className="py-16">
           <Empty className="w-full">
             <EmptyHeader>
               <EmptyMedia icon={FileText} className="size-12 text-muted-foreground/50" />
@@ -394,7 +463,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
   const renderNoMatchState = () => (
     <tbody>
       <tr>
-        <td colSpan={6} className="py-16">
+        <td colSpan={8} className="py-16">
           <Empty className="w-full">
             <EmptyHeader>
               <EmptyMedia icon={Filter} className="size-12 text-muted-foreground/50" />
@@ -422,7 +491,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
   const renderDataMissingState = () => (
     <tbody>
       <tr>
-        <td colSpan={6} className="py-16">
+        <td colSpan={8} className="py-16">
           <Empty className="w-full">
             <EmptyHeader>
               <EmptyMedia icon={AlertCircle} className="size-12 text-muted-foreground/50" />
@@ -450,7 +519,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
   const renderErrorState = () => (
     <tbody>
       <tr>
-        <td colSpan={6} className="py-8">
+        <td colSpan={8} className="py-8">
           <div className="flex flex-col items-center gap-3 text-center p-4 rounded-lg border border-destructive/20 bg-destructive/5">
             <AlertCircle className="h-8 w-8 text-destructive" />
             <p className="text-sm text-destructive font-medium">
@@ -474,6 +543,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
     <tbody className={`${isInitialLoad ? ROW_STAGGER : ''}`} ref={tableBodyRef}>
       {formattedApps.map((app, index) => {
         const selected = viewAppId === app.id
+        const action = getActionButton(app)
         return (
           <tr
             key={app.id}
@@ -502,6 +572,9 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
           <td className="px-3 py-2 font-mono text-xs text-foreground">
             {app.formattedDate}
           </td>
+          <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+            {app.reference}
+          </td>
           <td className="px-3 py-2 text-foreground">
             {app.applicantName}
           </td>
@@ -514,32 +587,43 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
           <td className="px-3 py-2 text-right font-mono tabular-nums text-foreground">
             {app.formattedTenure}
           </td>
-          <td className="px-3 py-2">
-            <div className="flex items-center justify-center gap-2">
-              <button
-                onClick={(e) => { e.stopPropagation(); setViewAppId(app.id) }}
-                className={`${BUTTON_HOVER_LIFT} btn ghost text-xs px-3 py-1.5`}
-                disabled={loading}
+          <td className="px-3 py-2 text-center">
+            <Badge variant={app.statusTone}>{app.statusText}</Badge>
+          </td>
+          <td className="px-3 py-2 text-center">
+            {action && (
+              <Tooltip
+                content={
+                  action.variant === 'disabled' ? 'Application has been booked' :
+                  action.variant === 'primary' ? 'Book the approved application and open the account' :
+                  'Run the credit decision for this application'
+                }
               >
-                View Application
-              </button>
-              <Tooltip content="Run the credit decision for this application">
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleRunDecision(app.id, app) }}
-                  disabled={loading || running.has(app.id)}
-                  className={`${BUTTON_HOVER_LIFT} btn border border-border bg-transparent text-foreground hover:bg-accent text-xs px-3 py-1.5 ${running.has(app.id) ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); action.onClick?.(app.id, app) }}
+                  disabled={loading || action.variant === 'disabled' || action.loading}
+                  className={`${BUTTON_HOVER_LIFT} btn text-xs px-3 py-1.5 min-w-[90px] ${
+                    action.variant === 'primary' ? '' :
+                    action.variant === 'secondary' ? 'border border-border bg-transparent text-foreground hover:bg-accent' :
+                    'opacity-50 cursor-not-allowed'
+                  } ${action.loading ? 'opacity-70 cursor-not-allowed' : ''}`}
                 >
-                  {running.has(app.id) ? (
+                  {action.loading ? (
                     <>
                       <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                      Running…
+                      {action.label}…
                     </>
                   ) : (
-                    'Run Decision'
+                    <>
+                      {action.variant === 'secondary' && <Gavel className="h-3 w-3 mr-1.5" />}
+                      {action.variant === 'primary' && <BookOpen className="h-3 w-3 mr-1.5" />}
+                      {action.variant === 'disabled' && <CheckCircle2 className="h-3 w-3 mr-1.5" />}
+                      {action.label}
+                    </>
                   )}
                 </button>
               </Tooltip>
-            </div>
+            )}
           </td>
         </tr>
       )})}
@@ -597,11 +681,11 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by name…"
+              placeholder="Search by name or reference…"
               value={debouncedSearch}
               onChange={handleSearchChange}
               className="w-full pl-9 pr-3 py-2 text-sm border border-input bg-background rounded-input focus:outline-none focus:ring-2 focus:ring-ring"
-              aria-label="Search applications by name"
+              aria-label="Search applications by name or reference"
             />
           </div>
 
@@ -636,6 +720,21 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
               <option value="">All Products</option>
               {products.map((product) => (
                 <option key={product} value={product}>{product}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status dropdown */}
+          <div className="flex-1 min-w-0 max-w-xs">
+            <select
+              value={filters.status || ''}
+              onChange={handleStatusChange}
+              className="w-full px-3 py-2 text-sm border border-input bg-background rounded-input focus:outline-none focus:ring-2 focus:ring-ring"
+              aria-label="Filter by status"
+            >
+              <option value="">All Statuses</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </div>
@@ -716,6 +815,17 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
                 </button>
               </Badge>
             )}
+            {filters.status && (
+              <Badge variant="secondary" className="gap-1">
+                Status: {statusLabel(filters.status)}
+                <button
+                  onClick={() => setFilters((prev) => ({ ...prev, status: '' }))}
+                  className="ml-1 hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            )}
             {filters.sort && filters.sort !== '-created_at' && (
               <Badge variant="secondary" className="gap-1">
                 Sort: {SORT_OPTIONS.find(o => o.value === filters.sort)?.label || filters.sort}
@@ -740,11 +850,15 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
 
       {/* Table */}
       <div className="rounded-card border border-border">
-        <table className="w-full border-collapse" role="table">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse" role="table">
             <thead>
               <tr style={{ borderBottom: '2px solid var(--teal)' }}>
                 <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Application Date
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Reference
                 </th>
                 <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Applicant Full Name
@@ -757,6 +871,9 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
                 </th>
                 <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Loan Term
+                </th>
+                <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
+                  Status
                 </th>
                 <th style={{ backgroundColor: '#f3f8f7' }} className="sticky top-0 z-10 px-3 py-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-[0.04em]">
                   Actions
@@ -773,6 +890,7 @@ const ApplicationsTab = forwardRef(function ApplicationsTab(
               )
             )}
           </table>
+        </div>
 
           {/* Pagination */}
           {renderPagination()}

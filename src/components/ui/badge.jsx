@@ -6,7 +6,7 @@ import { cn } from '../../lib/utils'
 // Badge variants: the three shadcn defaults plus success/warning, so decision
 // status (Approved / Pending / Rejected) maps onto the semantic tokens only.
 const badgeVariants = cva(
-  'inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+  'inline-flex items-center gap-1.5 uppercase rounded-xs border px-2 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {

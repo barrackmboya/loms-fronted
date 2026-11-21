@@ -1,14 +1,16 @@
-// Income step — employment status and income document uploads.
-// Field names match useLoanApplication's mapFormToPayload.
-// Employment statuses match the backend EmploymentStatus TextChoices.
+// Income & Declarations step.
+//
+// Captures employment, the declared affordability inputs (ORG-12 / DEC-05) and
+// the income evidence. Values stay as strings while editing and are converted
+// to numbers by buildApplicationPayload; the backend stores stated and verified
+// income separately.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { acceptsFile, isRealFile } from '../../lib/documents'
+import { EMPLOYMENT_STATUSES, newDebtRow, requiredDocumentsFor } from '../lib/form'
 
-const EMPLOYMENT_STATUSES = [
-  { value: 'EMPLOYED', label: 'Employed' },
-  { value: 'SELF_EMPLOYED_PROFESSIONAL', label: 'Self-Employed Professional' },
-  { value: 'SELF_EMPLOYED_BUSINESS', label: 'Self Employed Business Owner' },
-]
+const inputClass =
+  'w-full px-3 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/20'
 
 const NAME_FIELD_LABELS = {
   EMPLOYED: 'Employer Name',
@@ -22,287 +24,308 @@ const NAME_FIELD_PLACEHOLDERS = {
   SELF_EMPLOYED_BUSINESS: 'e.g. Amara Enterprises',
 }
 
-const DOCS_BY_STATUS = {
-  EMPLOYED: [
-    { key: 'payslip', label: 'Payslip (latest)', required: true },
-    { key: 'bank_statement', label: 'Bank Statement (3 months)', required: true },
-    { key: 'mpesa_statement', label: 'M-Pesa Statement', required: true },
-  ],
-  SELF_EMPLOYED_PROFESSIONAL: [
-    { key: 'bank_statement', label: 'Bank Statement (3 months)', required: false },
-    { key: 'mpesa_statement', label: 'M-Pesa Statement', required: true },
-  ],
-  SELF_EMPLOYED_BUSINESS: [
-    { key: 'bank_statement', label: 'Bank Statement (3 months)', required: false },
-    { key: 'mpesa_statement', label: 'M-Pesa Statement', required: true },
-  ],
+const INCOME_DOCS = [
+  { key: 'payslip', label: 'Payslip (latest)', docType: 'PAYSLIP' },
+  { key: 'bank_statement', label: 'Bank statement (3 months)', docType: 'BANK_STATEMENT' },
+  { key: 'mpesa_statement', label: 'M-PESA statement', docType: 'MPESA_STATEMENT' },
+]
+
+function MoneyField({ label, value, onChange, required = false, hint }) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-foreground mb-1">
+        {label} {required && <span className="text-destructive">*</span>}
+      </label>
+      <input
+        type="number"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value)}
+        min="0"
+        step="100"
+        placeholder="0"
+        className={inputClass}
+      />
+      {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
+  )
 }
 
-export function IncomeStep({ formData, updateField }) {
+export function IncomeStep({ formData, updateField, product }) {
   const [fileErrors, setFileErrors] = useState({})
-  const [fileHashes, setFileHashes] = useState({})
+  const status = formData.employment_status || ''
+  const required = useMemo(() => requiredDocumentsFor(product), [product])
 
-  const status = formData.employmentStatus || ''
-  const incomeDocs = DOCS_BY_STATUS[status] || []
-  const nameFieldLabel = NAME_FIELD_LABELS[status]
-
-  const handleFileChange = (key) => async (e) => {
-    const file = e.target.files?.[0] || null
-    if (file) {
-      const ext = `.${file.name.split('.').pop().toLowerCase()}`
-      if (!['.pdf', '.jpg', '.jpeg'].includes(ext)) {
-        setFileErrors((prev) => ({ ...prev, [key]: 'Only PDF and JPEG files are accepted.' }))
-        return
-      }
-      if (file.size > 12 * 1024 * 1024) {
-        setFileErrors((prev) => ({ ...prev, [key]: 'File exceeds 12 MB limit.' }))
-        return
-      }
-      const hash = await computeFileHash(file)
-      setFileHashes((prev) => ({ ...prev, [key]: hash }))
-    } else {
-      setFileErrors((prev) => {
-        const { [key]: _, ...rest } = prev
-        return rest
-      })
-    }
+  const handleFileChange = (key) => (event) => {
+    const file = event.target?.files?.[0] || null
     setFileErrors((prev) => ({ ...prev, [key]: null }))
+    if (!file) {
+      updateField(key, null)
+      return
+    }
+    const check = acceptsFile(file)
+    if (!check.ok) {
+      setFileErrors((prev) => ({ ...prev, [key]: check.error }))
+      if (event.target) event.target.value = ''
+      return
+    }
     updateField(key, file)
   }
 
-  const computeFileHash = async (file) => {
-    const buffer = await file.arrayBuffer()
-    // Web Crypto API may not be available in all environments (e.g. jsdom tests).
-    // Fall back to a simple hash based on file metadata when subtle is undefined.
-    if (typeof crypto === 'undefined' || !crypto.subtle) {
-      const hashArray = Array.from(new Uint8Array(buffer)).slice(0, 32)
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  const handleStatusChange = (event) => {
+    const next = event.target.value
+    const previous = status
+    updateField('employment_status', next)
+    if (next !== previous) {
+      updateField('employer_name', '')
+      updateField('monthly_income', '')
+      updateField('payslip_date', '')
     }
-    const hashBytes = await crypto.subtle.digest('SHA-256', buffer)
-    const hashArray = Array.from(new Uint8Array(hashBytes))
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
   }
 
-  const isPayslipRecent = (dateString) => {
-    const payslipDate = new Date(dateString)
-    const threeMonthsAgo = new Date()
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
-    return payslipDate >= threeMonthsAgo
+  const updateDebtRow = (index, key, value) => {
+    const rows = [...(formData.existing_debt_breakdown || [])]
+    rows[index] = { ...(rows[index] || newDebtRow()), [key]: value }
+    updateField('existing_debt_breakdown', rows)
   }
 
-  const handleFileView = (file) => {
-    const url = URL.createObjectURL(file)
-    window.open(url, '_blank')
+  const addDebtRow = () => {
+    updateField('existing_debt_breakdown', [
+      ...(formData.existing_debt_breakdown || []),
+      newDebtRow(),
+    ])
   }
 
-  const handleStatusChange = (e) => {
-    const newStatus = e.target.value
-    const previousStatus = status
-    updateField('employmentStatus', newStatus)
-    // The name field label changes per status — reset stale values.
-    if (newStatus !== previousStatus) {
-      updateField('employerName', '')
-      updateField('monthlyIncome', null)
-    }
-    // Drop documents that don't apply to the newly selected status (e.g. payslip).
-    const previousDocKeys = (DOCS_BY_STATUS[previousStatus] || []).map((d) => d.key)
-    const newDocKeys = (DOCS_BY_STATUS[newStatus] || []).map((d) => d.key)
-    previousDocKeys
-      .filter((key) => !newDocKeys.includes(key))
-      .forEach((key) => updateField(key, null))
-    if (newStatus !== 'EMPLOYED') updateField('payslipDate', null)
+  const removeDebtRow = (index) => {
+    updateField(
+      'existing_debt_breakdown',
+      (formData.existing_debt_breakdown || []).filter((_, i) => i !== index),
+    )
   }
-
-  const missingRequiredDocs = incomeDocs.filter((doc) => doc.required && !formData[doc.key])
-  const nameFieldMissing = !!nameFieldLabel && !formData.employerName
-  const allMandatoryMet = !nameFieldMissing && missingRequiredDocs.length === 0
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
         <label className="block text-xs font-medium text-foreground mb-1">
           Employment Status <span className="text-destructive">*</span>
         </label>
-        <select
-          value={status}
-          onChange={handleStatusChange}
-          className="w-full px-3 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/20"
-        >
+        <select value={status} onChange={handleStatusChange} className={inputClass}>
           <option value="">Select employment status</option>
           {EMPLOYMENT_STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
+            <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
       </div>
 
       {!!status && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-foreground mb-1">
-              {nameFieldLabel} <span className="text-destructive">*</span>
-            </label>
-            <input
-              type="text"
-              value={formData.employerName || ''}
-              onChange={(e) => updateField('employerName', e.target.value)}
-              placeholder={NAME_FIELD_PLACEHOLDERS[status]}
-              className="w-full px-3 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-foreground mb-1">
+                {NAME_FIELD_LABELS[status]} <span className="text-destructive">*</span>
+              </label>
+              <input
+                type="text"
+                value={formData.employer_name || ''}
+                onChange={(e) => updateField('employer_name', e.target.value)}
+                placeholder={NAME_FIELD_PLACEHOLDERS[status]}
+                className={inputClass}
+              />
+            </div>
+            <MoneyField
+              label="Monthly Income (KES)"
+              value={formData.monthly_income}
+              onChange={(v) => updateField('monthly_income', v)}
+              required
+              hint="Stated income. Extraction and statements provide the verified figure."
             />
           </div>
+
+          {status === 'EMPLOYED' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-foreground mb-1">
+                  Payslip Date <span className="text-destructive">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={formData.payslip_date || ''}
+                  onChange={(e) => updateField('payslip_date', e.target.value)}
+                  className={inputClass}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Should be within the last 3 months.
+                </p>
+              </div>
+              <label className="flex items-start gap-2 text-xs text-foreground mt-6">
+                <input
+                  type="checkbox"
+                  checked={!!formData.salary_domiciled}
+                  onChange={(e) => updateField('salary_domiciled', e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>Salary is domiciled with the lender (direct salary payment).</span>
+              </label>
+            </div>
+          )}
+
+          <div>
+            <p className="text-sm font-medium text-foreground mb-2">Income documents</p>
+            <div className="space-y-2">
+              {INCOME_DOCS.map((doc) => {
+                const isRequired = required.includes(doc.docType)
+                const file = formData[doc.key]
+                return (
+                  <div key={doc.key} className="flex flex-col gap-2 p-3 rounded-lg border border-input bg-background sm:flex-row sm:items-center">
+                    <span className="flex-shrink-0 text-muted-foreground">📄</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-foreground">
+                        {doc.label}
+                        <span className={`ml-2 text-xs font-normal ${isRequired ? 'text-destructive' : 'text-muted-foreground'}`}>
+                          ({isRequired ? 'Required' : 'Optional'})
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">PDF, JPG, JPEG · max 12 MB</div>
+                      {fileErrors[doc.key] && (
+                        <div className="text-xs text-destructive mt-1">{fileErrors[doc.key]}</div>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 px-3 py-1.5 border border-input rounded-md hover:bg-accent cursor-pointer text-sm text-foreground transition-colors">
+                      {isRealFile(file) ? 'Change file' : 'Choose file'}
+                      <input
+                        type="file"
+                        accept=".pdf,.jpg,.jpeg,.png"
+                        onChange={handleFileChange(doc.key)}
+                        className="sr-only"
+                      />
+                    </label>
+                    {isRealFile(file) && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-teal-700 truncate max-w-[10rem]">{file.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => updateField(doc.key, null)}
+                          className="text-xs text-destructive hover:text-destructive/80"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="border-t border-border pt-4">
+        <p className="text-sm font-medium text-foreground mb-1">Declarations</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          These figures feed affordability (DSR/FOIR/residual income) and fraud reconciliation.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <MoneyField
+            label="Monthly Expenses (KES)"
+            value={formData.monthly_expenses}
+            onChange={(v) => updateField('monthly_expenses', v)}
+            required
+          />
           <div>
             <label className="block text-xs font-medium text-foreground mb-1">
-              Monthly Income (KES) <span className="text-destructive">*</span>
+              Dependants <span className="text-destructive">*</span>
             </label>
             <input
               type="number"
-              value={formData.monthlyIncome || ''}
-              onChange={(e) =>
-                updateField('monthlyIncome', e.target.value ? Number(e.target.value) : null)
-              }
+              value={formData.dependents ?? ''}
+              onChange={(e) => updateField('dependents', e.target.value)}
               min="0"
-              step="1000"
-              placeholder="e.g. 50000"
-              className="w-full px-3 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+              step="1"
+              placeholder="0"
+              className={inputClass}
             />
           </div>
-        </div>
-      )}
-
-      {status === 'EMPLOYED' && (
-        <div>
-          <label className="block text-xs font-medium text-foreground mb-1">
-            Payslip Date <span className="text-destructive">*</span>
-          </label>
-          <input
-            type="date"
-            value={formData.payslipDate || ''}
-            onChange={(e) => updateField('payslipDate', e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-input bg-background rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+          <MoneyField
+            label="Rent / Housing (KES)"
+            value={formData.rent_or_housing}
+            onChange={(v) => updateField('rent_or_housing', v)}
+            required
           />
-          <p className="text-xs text-muted-foreground mt-1">
-            Date shown on your payslip (used to check recency — should be within the last 3 months).
-          </p>
+          <MoneyField
+            label="Other Income (KES)"
+            value={formData.other_income}
+            onChange={(v) => updateField('other_income', v)}
+            required
+          />
+          <MoneyField
+            label="Existing Debt Service (KES / month)"
+            value={formData.existing_debt_service}
+            onChange={(v) => updateField('existing_debt_service', v)}
+            required
+            hint="Total monthly repayments on other loans and obligations."
+          />
         </div>
-      )}
 
-      {!!status && (
-        <div>
-          <label className="block text-xs font-medium text-foreground mb-1">
-            Income Documents <span className="text-destructive">*</span>
-          </label>
-          <p className="text-xs text-muted-foreground mb-3">
-            Upload the required documents for your employment status (PDF or JPEG).
-          </p>
-          <div className="space-y-3">
-            {incomeDocs.map((doc) => {
-              const hasFile = !!formData[doc.key]
-              const fileError = fileErrors[doc.key]
-              return (
-                <div key={doc.key} className="flex items-center gap-3 p-3 rounded-lg border border-input bg-background">
-                  <span className="flex-shrink-0 text-muted-foreground">📄</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground">
-                      {doc.label}
-                      <span className={`ml-2 text-xs font-normal ${doc.required ? 'text-destructive' : 'text-muted-foreground'}`}>
-                        ({doc.required ? 'Required' : 'Optional'})
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">PDF, JPG, JPEG</div>
-                    {fileError && (
-                      <div className="text-xs text-destructive mt-1">{fileError}</div>
-                    )}
-                  </div>
-                  <label
-                    className="ml-4 flex items-center gap-2 px-3 py-1.5 border border-input rounded-md hover:bg-accent cursor-pointer text-sm text-foreground transition-colors"
-                  >
-                    {hasFile ? 'Change file' : 'Choose file'}
-                    <input
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg"
-                      onChange={handleFileChange(doc.key)}
-                      className="sr-only"
-                    />
-                  </label>
-                  {hasFile && (
-                    <div className="flex items-center gap-2 ml-2">
-                      <span className="text-xs text-teal-600">{formData[doc.key].name}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleFileView(formData[doc.key])}
-                        className="text-xs text-teal-600 hover:text-teal-600/80 underline underline-offset-4"
-                      >
-                        View
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => updateField(doc.key, null)}
-                        className="text-xs text-destructive hover:text-destructive/80"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+        <div className="mt-4">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">Existing debt breakdown</p>
+            <button type="button" onClick={addDebtRow} className="text-xs text-teal-700 hover:underline">
+              + Add debt
+            </button>
           </div>
-        </div>
-      )}
-
-      {status === 'EMPLOYED' && formData.payslip && (
-        <div className="space-y-2">
-          {formData.employerName && (
-            <div className="p-2 rounded-lg border border-amber-200 bg-amber-50">
-              <p className="text-xs text-amber-800">
-                Please confirm the employer name on your payslip matches
-                <span className="font-medium">{formData.employerName}</span>.
-              </p>
-            </div>
-          )}
-          {formData.monthlyIncome && (
-            <div className="p-2 rounded-lg border border-amber-200 bg-amber-50">
-              <p className="text-xs text-amber-800">
-                Please confirm the income on your payslip matches KES{' '}
-                <span className="font-medium">{Number(formData.monthlyIncome).toLocaleString()}</span> per month.
-              </p>
-            </div>
-          )}
-          {formData.payslipDate && (
-            <div className="p-2 rounded-lg border border-amber-200 bg-amber-50">
-              <p className="text-xs text-amber-800">
-                Payslip date: {formData.payslipDate}{' '}
-                {isPayslipRecent(formData.payslipDate) ? (
-                  <span className="font-medium">(within 3 months)</span>
-                ) : (
-                  <span className="font-medium">(more than 3 months old — may affect verification)</span>
-                )}
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!!status && (
-        <div
-          className={`p-2 rounded-lg border ${
-            allMandatoryMet
-              ? 'border-teal-500/20 bg-teal-50/5'
-              : 'border-destructive/20 bg-destructive/5'
-          }`}
-        >
-          {allMandatoryMet ? (
-            <p className="text-xs text-teal-700">All required information provided.</p>
-          ) : (
-            <p className="text-xs text-destructive">
-              {nameFieldMissing && `${nameFieldLabel} is required.`}{' '}
-              {missingRequiredDocs.length > 0 &&
-                `Please upload: ${missingRequiredDocs.map((d) => d.label).join(', ')}.`}
+          {(formData.existing_debt_breakdown || []).length === 0 ? (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              No other debts declared. Add a row per lender / facility if any.
             </p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {(formData.existing_debt_breakdown || []).map((row, index) => (
+                <div key={index} className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:items-end">
+                  <div className="col-span-2 sm:col-span-1">
+                    <input
+                      value={row.type || ''}
+                      onChange={(e) => updateDebtRow(index, 'type', e.target.value)}
+                      placeholder="Type (e.g. car loan)"
+                      className={inputClass}
+                    />
+                  </div>
+                  <div className="col-span-2 sm:col-span-1">
+                    <input
+                      value={row.lender || ''}
+                      onChange={(e) => updateDebtRow(index, 'lender', e.target.value)}
+                      placeholder="Lender"
+                      className={inputClass}
+                    />
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={row.monthly_amount ?? ''}
+                    onChange={(e) => updateDebtRow(index, 'monthly_amount', e.target.value)}
+                    placeholder="Monthly"
+                    className={inputClass}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    value={row.outstanding_balance ?? ''}
+                    onChange={(e) => updateDebtRow(index, 'outstanding_balance', e.target.value)}
+                    placeholder="Outstanding"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeDebtRow(index)}
+                    className="text-xs text-destructive hover:text-destructive/80 py-2"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

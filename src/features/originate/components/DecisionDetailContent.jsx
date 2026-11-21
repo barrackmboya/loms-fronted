@@ -7,17 +7,36 @@ import { api } from '../../../lib/api'
 
 export function DecisionDetailContent({ record }) {
   const [form, setForm] = useState(null)
+  const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!record) return
     setForm(null)
+    setDetail(null)
     setLoading(true)
-    api.retrieveApplication(record.applicationId)
-      .then(setForm)
-      .catch(() => setForm({}))
+    // The application form supplies the bureau/telemetry rows; the persisted
+    // decision supplies the latest income and document extraction evidence.
+    Promise.all([
+      api.retrieveApplication(record.applicationId).catch(() => ({})),
+      api.decisionDetail(record.applicationId).catch(() => null),
+    ])
+      .then(([application, decision]) => {
+        setForm(application)
+        setDetail(decision)
+      })
       .finally(() => setLoading(false))
   }, [record])
+
+  const detailData = detail || {}
+  const base = record.fullResponse || {}
+  // Prefer the fresh evidence from the persisted decision; keep the richer
+  // POST response shape for everything else.
+  const res = { ...detailData, ...base }
+  res.limit_detail = base.limit_detail || detailData.limit || detailData.limit_detail || {}
+  res.income_analysis = detailData.income_analysis ?? base.income_analysis
+  const analysis = detailData.document_analysis || base.document_analysis || {}
+  res.document_analysis = analysis
 
   return (
     <div className="flex h-full flex-col">
@@ -31,8 +50,12 @@ export function DecisionDetailContent({ record }) {
           </div>
         ) : (
           <OriginateDecisioning
-            res={record.fullResponse}
+            res={res}
             form={form}
+            income={res.income_analysis}
+            kyc={analysis.kra_pin}
+            crb={analysis.crb}
+            identityDoc={analysis.identity}
             onBook={() => {}}
             onNewApplication={() => {}}
             booked={false}

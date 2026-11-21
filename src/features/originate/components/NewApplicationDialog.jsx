@@ -1,54 +1,26 @@
-import { useCallback, useState } from 'react'
-import { ArrowLeft, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
-import { toast } from 'sonner'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react'
 import { SlidePanel } from './SlidePanel'
 import { useLoanApplication } from '../loan-application/hooks/useLoanApplication'
+import { useLoanProducts } from '../loan-application/hooks/useLoanProducts'
 import { PersonalInfoStep } from '../loan-application/steps/PersonalInfo'
 import { LoanDetailsStep } from '../loan-application/steps/LoanDetails'
 import { DocumentsStep } from '../loan-application/steps/Documents'
 import { AddressStep } from '../loan-application/steps/AddressStep'
 import { IncomeStep } from '../loan-application/steps/IncomeStep'
 import { ReviewStep } from '../loan-application/steps/Review'
+import {
+  STEPS,
+  createInitialForm,
+  requiredDocumentsFor,
+  selectedProduct,
+  validateApplication,
+  validateStep,
+} from '../loan-application/lib/form'
 
-const STEPS = [
-  { key: 'personal', label: 'Personal Info' },
-  { key: 'loan', label: 'Loan Details' },
-  { key: 'documents', label: 'Documents' },
-  { key: 'income', label: 'Income' },
-  { key: 'address', label: 'Address' },
-  { key: 'review', label: 'Review & Submit' },
-]
-
-const INITIAL_FORM = {
-  firstName: '',
-  nationalId: '',
-  email: '',
-  phone: '',
-  loan_product: 'Quick Salary Advance',
-  amount_requested: '',
-  loan_term: '',
-  purpose: '',
-  id_photo_front: null,
-  id_photo_back: null,
-  id_photo_combined: null,
-  payslip: null,
-  bank_statement: null,
-  mpesa_statement: null,
-  employmentStatus: '',
-  employerName: '',
-  monthlyIncome: null,
-  address: {
-    county: null,
-    subcounty: null,
-    ward: null,
-    neighborhood: null,
-    street: null,
-    landmark: null,
-    lat: null,
-    lng: null,
-    plot_number: '',
-    postal_code: '',
-  },
+function newIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
+  return `app-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 export default function NewApplicationDialog({
@@ -58,18 +30,46 @@ export default function NewApplicationDialog({
   onCreated,
 }) {
   const [stepIndex, setStepIndex] = useState(0)
-  const [formData, setFormData] = useState({ ...INITIAL_FORM })
+  const [formData, setFormData] = useState(createInitialForm)
   const [submitError, setSubmitError] = useState(null)
+  const idempotencyKeyRef = useRef(newIdempotencyKey())
 
   const { submitApplicationMultipart, submitting, error: hookError } = useLoanApplication()
+  const { products, error: productsError } = useLoanProducts()
 
-  const isLastStep = stepIndex === STEPS.length - 1
   const currentStep = STEPS[stepIndex]
+  const isLastStep = stepIndex === STEPS.length - 1
   const isBusy = submitting
 
+  const product = useMemo(
+    () => selectedProduct(products, formData),
+    [products, formData],
+  )
+  const required = useMemo(() => requiredDocumentsFor(product), [product])
+  const stepErrors = useMemo(
+    () => validateStep(currentStep.key, formData, { product }),
+    [currentStep.key, formData, product],
+  )
+  const allErrors = useMemo(
+    () => validateApplication(formData, { product }),
+    [formData, product],
+  )
+
+  // A fresh panel is a fresh application attempt. Resetting here also gives
+  // each attempt its own Idempotency-Key, so retrying the same submit returns
+  // the original record while a new application creates a new one.
+  useEffect(() => {
+    if (!open) return
+    setStepIndex(0)
+    setFormData(createInitialForm())
+    setSubmitError(null)
+    idempotencyKeyRef.current = newIdempotencyKey()
+  }, [open])
+
   const nextStep = useCallback(() => {
-    if (stepIndex < STEPS.length - 1) setStepIndex((i) => i + 1)
-  }, [stepIndex])
+    if (stepErrors.length || stepIndex >= STEPS.length - 1) return
+    setStepIndex((i) => i + 1)
+  }, [stepErrors.length, stepIndex])
 
   const prevStep = useCallback(() => {
     if (stepIndex > 0) setStepIndex((i) => i - 1)
@@ -84,78 +84,33 @@ export default function NewApplicationDialog({
 
   const handleSubmit = useCallback(async () => {
     setSubmitError(null)
+    if (allErrors.length) {
+      setSubmitError(allErrors.slice(0, 5).join(' '))
+      return
+    }
     try {
-      const payload = { ...formData, channel }
-      await submitApplicationMultipart(payload)
+      await submitApplicationMultipart(formData, {
+        channel,
+        idempotencyKey: idempotencyKeyRef.current,
+      })
+      idempotencyKeyRef.current = newIdempotencyKey()
       onOpenChange(false)
       onCreated?.()
     } catch (e) {
       setSubmitError(e.message || 'Failed to submit application')
     }
-  }, [formData, channel, submitApplicationMultipart, onOpenChange, onCreated])
-
-  // Per-step validation for Next gating
-  const isStepValid = useCallback(() => {
-    switch (currentStep.key) {
-      case 'personal':
-        return (
-          !!formData.first_name &&
-          !!formData.last_name &&
-          !!formData.nationalId &&
-          !!formData.email &&
-          !!formData.phone
-        )
-      case 'loan':
-        return !!formData.loan_product && !!formData.amount_requested && !!formData.loan_term && !!formData.purpose
-      case 'documents':
-        return true // documents are optional
-      case 'income': {
-        const isEmployed = formData.employmentStatus === 'EMPLOYED'
-        const isSelfEmployedProfessional =
-          formData.employmentStatus === 'SELF_EMPLOYED_PROFESSIONAL'
-        const isSelfEmployedBusiness = formData.employmentStatus === 'SELF_EMPLOYED_BUSINESS'
-        if (!formData.employmentStatus) return true
-        if (!formData.employerName || formData.monthlyIncome === null) return false
-        if (isEmployed) {
-          return !!formData.payslip && !!formData.bank_statement && !!formData.mpesa_statement
-        }
-        if (isSelfEmployedProfessional || isSelfEmployedBusiness) {
-          return !!formData.mpesa_statement
-        }
-        return true
-      }
-      case 'address': {
-        const a = formData.address
-        const selectedCount = (a.street ? 1 : 0) + (a.landmarks || []).filter((l) => l.type !== 'street').length
-        return !!(
-          a.county &&
-          a.subcounty &&
-          a.ward &&
-          a.neighborhood &&
-          selectedCount >= 3
-        )
-      }
-      case 'review':
-        return true
-      default:
-        return true
-    }
-  }, [currentStep.key, formData])
-
-  const handlePanelClose = () => {
-    onOpenChange(false)
-  }
+  }, [allErrors, formData, channel, submitApplicationMultipart, onOpenChange, onCreated])
 
   return (
     <SlidePanel
       open={open}
-      onClose={handlePanelClose}
+      onClose={() => onOpenChange(false)}
       title={`New Application — ${channel}`}
       subtitle="Complete the form to submit a loan application"
     >
       <div className="flex flex-col h-full min-h-0">
         {/* Step indicator */}
-        <div className="flex gap-1 mb-4">
+        <div className="flex flex-wrap gap-1 mb-4">
           {STEPS.map((step, idx) => (
             <div
               key={step.key}
@@ -182,29 +137,62 @@ export default function NewApplicationDialog({
           ))}
         </div>
 
-        {/* Step content — inline vertical scrollbar within the panel body */}
+        {/* Step content — vertical scrollbar inside the panel body */}
         <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
           {currentStep.key === 'personal' && (
             <PersonalInfoStep formData={formData} updateField={updateField} />
           )}
           {currentStep.key === 'loan' && (
-            <LoanDetailsStep formData={formData} updateField={updateField} />
+            <LoanDetailsStep
+              formData={formData}
+              updateField={updateField}
+              products={products}
+              product={product}
+            />
           )}
           {currentStep.key === 'documents' && (
-            <DocumentsStep formData={formData} updateField={updateField} />
+            <DocumentsStep
+              formData={formData}
+              updateField={updateField}
+              product={product}
+              required={required}
+            />
           )}
           {currentStep.key === 'income' && (
-            <IncomeStep formData={formData} updateField={updateField} />
+            <IncomeStep formData={formData} updateField={updateField} product={product} />
           )}
           {currentStep.key === 'address' && (
             <AddressStep formData={formData} updateField={updateField} />
           )}
-          {currentStep.key === 'review' && <ReviewStep formData={formData} />}
+          {currentStep.key === 'review' && (
+            <ReviewStep
+              formData={formData}
+              updateField={updateField}
+              product={product}
+              required={required}
+            />
+          )}
         </div>
 
-        {/* Submit error */}
+        {productsError && (
+          <div className="mt-3 p-2 rounded-md border border-amber-200 bg-amber-50 text-xs text-amber-800">
+            Could not load the product catalogue — showing the default catalogue. {productsError.message}
+          </div>
+        )}
+
+        {/* Validation + submit errors */}
+        {stepErrors.length > 0 && !isLastStep && (
+          <div className="mt-3 p-3 rounded-lg border border-amber-200 bg-amber-50 text-xs text-amber-800">
+            <div className="flex items-center gap-1.5 font-medium mb-1">
+              <AlertCircle className="h-3.5 w-3.5" /> Complete this step to continue
+            </div>
+            <ul className="list-disc list-inside space-y-0.5">
+              {stepErrors.slice(0, 4).map((error) => <li key={error}>{error}</li>)}
+            </ul>
+          </div>
+        )}
         {(submitError || hookError) && (
-          <div className="p-3 rounded-lg border border-destructive/20 bg-destructive/5 text-sm text-destructive">
+          <div className="mt-3 p-3 rounded-lg border border-destructive/20 bg-destructive/5 text-sm text-destructive">
             {submitError || hookError}
           </div>
         )}
@@ -212,11 +200,7 @@ export default function NewApplicationDialog({
         {/* Navigation footer — pinned at bottom */}
         <div className="flex justify-between items-center pt-6 border-t border-border shrink-0">
           {stepIndex > 0 ? (
-            <button
-              onClick={prevStep}
-              disabled={isBusy}
-              className="btn ghost whitespace-nowrap"
-            >
+            <button onClick={prevStep} disabled={isBusy} className="btn ghost whitespace-nowrap">
               <ChevronLeft className="h-4 w-4 mr-2" /> Previous
             </button>
           ) : null}
@@ -228,8 +212,9 @@ export default function NewApplicationDialog({
           {isLastStep ? (
             <button
               onClick={handleSubmit}
-              disabled={isBusy}
+              disabled={isBusy || allErrors.length > 0}
               className="btn"
+              title={allErrors.length ? allErrors[0] : undefined}
             >
               {isBusy ? (
                 <>
@@ -243,8 +228,9 @@ export default function NewApplicationDialog({
           ) : (
             <button
               onClick={nextStep}
-              disabled={isBusy || !isStepValid()}
+              disabled={isBusy || stepErrors.length > 0}
               className="btn"
+              title={stepErrors[0] || undefined}
             >
               Next <ChevronRight className="h-4 w-4 ml-2" />
             </button>

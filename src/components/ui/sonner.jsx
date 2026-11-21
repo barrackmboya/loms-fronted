@@ -11,7 +11,7 @@ export function Toaster(props) {
       richColors={false}
       closeButton
       visibleToasts={3}
-      duration={4000}
+      duration={26000}
       {...props}
     />
   )

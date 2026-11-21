@@ -16,6 +16,10 @@ export default function OriginateDecisioning({ res, form, income, kyc, crb, iden
   const gates = Object.entries(res.gates || {})
   const declined = res.decision === 'DECLINE'
   const bts = res.scorecard?.bts  // both segments (decisioning mapper attaches the segment's BTSResult)
+  // The decision response embeds the latest income ExtractionRun. Fall back to
+  // it when the caller did not upload/fetch an analysis separately (decision
+  // detail panel, records loaded from the API).
+  const incomeData = income || res.income_analysis
 
   return (
     <>
@@ -25,7 +29,7 @@ export default function OriginateDecisioning({ res, form, income, kyc, crb, iden
 
         {bts && <BtsPanel bts={bts} />}
 
-        {income && <IncomePanel income={income} />}
+        {incomeData && <IncomePanel income={incomeData} />}
 
         {kyc && <KycPanel kyc={kyc} />}
 

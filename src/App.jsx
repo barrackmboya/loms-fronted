@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle, CalendarClock, Database, FileSignature,
-  Landmark, LineChart, PhoneCall, Scale, BarChart2, LayoutDashboard, Clock, FileCheck2
+  Landmark, LineChart, PhoneCall, Scale, BarChart2, LayoutDashboard, Clock
 } from 'lucide-react'
 import { api } from './lib/api'
 import { Toaster } from './components/ui/sonner'
@@ -16,7 +16,6 @@ import Watchlist from './views/Watchlist'
 import Collections from './views/Collections'
 import PolicyPack from './views/PolicyPack'
 import MetricsView from './views/MetricsView'
-import DocumentVerification from './views/DocumentVerification'
 import Login from './views/Login'
 import PasswordResetRequest from './views/PasswordResetRequest'
 import PasswordResetConfirm from './views/PasswordResetConfirm'
@@ -48,7 +47,6 @@ const MODULE_TABS = {
   collections: { key: 'collections', label: 'Collections', icon: PhoneCall },
   policy: { key: 'policy', label: 'Policy Pack', icon: Scale },
   metrics: { key: 'metrics', label: 'Metrics', icon: BarChart2 },
-  document_verification: { key: 'document_verification', label: 'Document Verification & Fraud', icon: FileCheck2 },
 }
 
 export default function App() {
@@ -63,7 +61,6 @@ export default function App() {
   const [showTimeoutModal, setShowTimeoutModal] = useState(false)
   const [secondsRemaining, setSecondsRemaining] = useState(90)
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [documentSeed, setDocumentSeed] = useState(null)
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('accessToken')
@@ -206,26 +203,6 @@ export default function App() {
     finally { setBusy(null) }
   }
 
-  const seedDocuments = async () => {
-    setBusy('seedDocuments')
-    setError(null)
-    try {
-      const token = localStorage.getItem('accessToken')
-      const response = await fetch('/api/document-verification/seed/', {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
-      const payload = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(payload.detail || payload.error || `Seed failed (${response.status})`)
-      setDocumentSeed(payload)
-      setTab('document_verification')
-    } catch (e) {
-      setError(`Document seed failed: ${e.message}`)
-    } finally {
-      setBusy(null)
-    }
-  }
-
   // Handle routing based on URL path
   const pathName = window.location.pathname
 
@@ -258,9 +235,6 @@ export default function App() {
           </button>
           <button className="btn ghost" disabled={busy || !userProfile} onClick={() => run('seedDashboard', api.seedDashboard)}>
             <Database size={16} /> {busy === 'seedDashboard' ? 'Seeding…' : 'Seed Dashboard'}
-          </button>
-          <button className="btn ghost" disabled={busy || !userProfile} onClick={seedDocuments}>
-            <FileCheck2 size={16} /> {busy === 'seedDocuments' ? 'Seeding…' : 'Seed Documents'}
           </button>
           <button className="btn brass" disabled={busy || !userProfile} onClick={() => run('month', api.advanceMonth)}>
             <CalendarClock size={16} /> {busy === 'month' ? 'Running…' : 'Run a month'}
@@ -303,9 +277,6 @@ export default function App() {
               {tab === 'collections' && <Collections rows={data.collections} userProfile={userProfile} />}
               {tab === 'policy' && <PolicyPack userProfile={userProfile} />}
               {tab === 'metrics' && <MetricsView module="origination" userProfile={userProfile} />}
-              {tab === 'document_verification' && (
-                <DocumentVerification initialSeed={documentSeed} userProfile={userProfile} />
-              )}
             </main>
           )}
         </>

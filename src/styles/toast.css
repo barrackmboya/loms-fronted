@@ -55,17 +55,67 @@
 }
 
 [data-sonner-toast] [data-close-button] {
-  width: 16px !important;
-  height: 16px !important;
+  width: 28px !important;
+  height: 28px !important;
   border-radius: 50% !important;
-  border: 1px solid rgba(0,0,0,0.06) !important;
+  border: 1px solid rgba(0,0,0,0.1) !important;
   background: #ffffff !important;
-  color: #5d6b66 !important;
+  color: #0d1f1c !important;
   top: 8px !important;
   right: 8px !important;
+  left: auto !important;
   transform: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important;
+  opacity: 0.8 !important;
+  transition: all 0.2s ease !important;
+  position: absolute !important;
+  z-index: 10 !important;
+  margin-left: auto !important;
 }
 [data-sonner-toast] [data-close-button]:hover {
   border-color: #0d1f1c !important;
   color: #0d1f1c !important;
+  background: #f5f5f5 !important;
+  opacity: 1 !important;
+  transform: scale(1.1) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+}
+[data-sonner-toast] [data-close-button] svg {
+  width: 16px !important;
+  height: 16px !important;
+  stroke-width: 2.5 !important;
+}
+
+/* Force close button to right side in flex container */
+[data-sonner-toast] {
+  position: relative !important;
+}
+[data-sonner-toast] > div:last-child {
+  margin-left: auto !important;
+}
+
+/* Target sonner's internal structure */
+[data-sonner-toaster] [data-sonner-toast] {
+  position: relative !important;
+}
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  left: auto !important;
+  margin-left: auto !important;
+}
+
+/* If close button is in a wrapper div */
+[data-sonner-toast] [data-close-button] {
+  inset-inline-start: auto !important;
+  inset-inline-end: 8px !important;
+}
+
+/* Force flex end alignment for any wrapper */
+[data-sonner-toast] > *:last-child {
+  margin-left: auto !important;
 }

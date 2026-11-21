@@ -59,12 +59,11 @@ const FILTERS = [
 
 const FULL_WIDTH_GRID = { gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', width: '100%' }
 
-// Break the whole screen out to 98vw and re-center it, regardless of
-// whatever max-width/padding the parent shell applies.
+// Fill the (now full-width) <main> shell; it is capped by main's
+// max-width on extra-large screens so tables/lines never over-stretch.
 const PAGE_WIDE = {
-  width: '98vw',
-  maxWidth: '98vw',
-  marginLeft: 'calc(-49vw + 50%)',
+  width: '100%',
+  maxWidth: '100%',
   boxSizing: 'border-box',
 }
 

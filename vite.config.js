@@ -13,14 +13,16 @@ export default defineConfig({
     // proxy: { '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true } },
     proxy: {
       '/api': {
-        target: 'http://192.168.100.21:8000',
+        // target: 'http://192.168.100.21:8001',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true
         // no rewrite
       },
       // KYC report documents/photos come back as relative /media/... URLs —
       // serve them through the same Django host as the API.
       '/media': {
-        target: 'http://192.168.100.21:8000',
+        // target: 'http://192.168.100.21:8001',
+        target: 'http://127.0.0.1:8001',
         changeOrigin: true
       }
     },
