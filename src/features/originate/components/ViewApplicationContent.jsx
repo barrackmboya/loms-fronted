@@ -8,7 +8,7 @@ import {
   FileText, FileSearch, Image as ImageIcon, MapPin, Building2, Home, Hash, Globe, Calendar,
   Banknote, Percent, CircleCheck, User, Users, Mail, Phone, Navigation, Map as MapIcon,
   ZoomIn, ZoomOut, ExternalLink, Briefcase, Wallet, Loader2, AlertCircle, FileX,
-  UserCheck, StickyNote, Shield, Gauge, ClipboardCheck, BookOpen, XCircle,
+  UserCheck, StickyNote, Shield, Gauge, ClipboardCheck, BookOpen, XCircle, ChevronDown,
 } from 'lucide-react'
 import { Badge } from '../../../components/ui/badge'
 import { Skeleton } from '../../../components/ui/skeleton'
@@ -694,10 +694,33 @@ export function ViewApplicationContent({ applicationId }) {
             <SubTitle>Current Employment</SubTitle>
             <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
               <Field icon={Building2} label="Employer Name">{e.current?.employer ?? '—'}</Field>
-              <Field icon={Briefcase} label="Job Title">{e.current?.title ?? '—'}</Field>
-              <Field icon={Banknote} label="Monthly Income" mono>{e.current?.income ?? '—'}</Field>
-              <Field icon={Briefcase} label="Employment Status">{e.current?.status ?? '—'}</Field>
+              <Field icon={Building2} label="Industry / Sector">{e.current?.industrySector ?? '—'}</Field>
+              <Field icon={Shield} label="Employer PIN" mono>{e.current?.employerPin ?? '—'}</Field>
+              <Field icon={MapPin} label="Employer Address">{e.current?.employerAddress ?? '—'}</Field>
+              <Field icon={Phone} label="Employer Phone">{e.current?.employerPhone ?? '—'}</Field>
+              <Field icon={Mail} label="Employer Email">{e.current?.employerEmail ?? '—'}</Field>
             </div>
+
+            {/* Additional Employer/Business Details (for decisioning) */}
+            {e.current && (
+              <details className="mt-4 group">
+                <summary className="flex items-center gap-2 cursor-pointer text-[13px] font-medium text-foreground hover:text-[var(--teal)] select-none">
+                  <ChevronDown className="h-4 w-4 transition-transform duration-200 group-open:rotate-180" />
+                  <span>Additional Employer Details (Decisioning)</span>
+                </summary>
+                <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <Field icon={Hash} label="Employee ID" mono>{e.current?.employeeId ?? '—'}</Field>
+                  <Field icon={Briefcase} label="Job Title">{e.current?.title ?? '—'}</Field>
+                  <Field icon={Briefcase} label="Employment Type">{e.current?.employmentType ?? '—'}</Field>
+                  <Field icon={Calendar} label="Years at Employer">{e.current?.yearsAtEmployer ?? '—'}</Field>
+                  <Field icon={Wallet} label="Salary Payment Method">{e.current?.salaryPaymentMethod ?? '—'}</Field>
+                  <Field icon={Shield} label="NSSF Number" mono>{e.current?.nssfNumber ?? '—'}</Field>
+                  <Field icon={Shield} label="NHIF Number" mono>{e.current?.nhifNumber ?? '—'}</Field>
+                  <Field icon={FileText} label="Employer Reg. Number" mono>{e.current?.employerRegistrationNumber ?? '—'}</Field>
+                  <Field icon={Users} label="Employer Size">{e.current?.employerSize ?? '—'}</Field>
+                </div>
+              </details>
+            )}
 
             <Divider />
             <SubTitle>Known Employment History</SubTitle>

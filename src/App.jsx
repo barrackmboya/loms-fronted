@@ -8,6 +8,7 @@ import { Toaster } from './components/ui/sonner'
 import './features/originate/originate.css'
 import './styles/toast.css'
 import Dashboard from './views/Dashboard'
+// import { DashboardView } from './features/dashboard'
 import Originate from './views/Originate'
 import { OriginatePage } from './features/originate/OriginatePage'
 import Portfolio from './views/Portfolio'
@@ -270,7 +271,7 @@ export default function App() {
           ) : (
             <main>
               {error && <p className="error">{error}</p>}
-              {tab === 'dashboard' && <Dashboard data={data.dashboard || data} userProfile={userProfile} />}
+              {tab === 'dashboard' && <Dashboard userProfile={userProfile} />}
               {tab === 'portfolio' && <Portfolio data={data.portfolio} userProfile={userProfile} />}
               {tab === 'accounts' && <Accounts rows={data.accounts} userProfile={userProfile} />}
               {tab === 'watchlist' && <Watchlist rows={data.watchlist} userProfile={userProfile} />}

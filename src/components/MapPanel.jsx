@@ -137,6 +137,20 @@ export function MapPanel({ center = DEFAULT_CENTER, zoom = 15, label, markers, p
           box-shadow: 0 1px 3px rgba(13, 31, 28, 0.18);
           pointer-events: none;
         }
+        .kyc-category-tooltip {
+          background: #fef3c7 !important; /* amber-50 */
+          border: 1px solid #f59e0b !important; /* amber-500 */
+          border-radius: 4px;
+          padding: 2px 8px;
+          font-size: 11px;
+          font-weight: 600;
+          line-height: 18px;
+          color: #92400e !important; /* amber-900 */
+          box-shadow: 0 2px 6px rgba(13, 31, 28, 0.25);
+        }
+        .kyc-category-tooltip::before {
+          border-top-color: #fef3c7 !important; /* match background for arrow */
+        }
       `}</style>
 
       <MapContainer
@@ -153,7 +167,7 @@ export function MapPanel({ center = DEFAULT_CENTER, zoom = 15, label, markers, p
       >
         <TileLayer
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          
         />
         {bounds ? <FitBounds bounds={bounds} /> : <Recenter center={center} />}
 
@@ -165,13 +179,15 @@ export function MapPanel({ center = DEFAULT_CENTER, zoom = 15, label, markers, p
 
         {points.length > 0
           ? points.map((m, i) => (
+         
+            
               <Marker key={m.id ?? i} position={m.position} icon={pinIcon(m.label, m.color)}>
-                {m.category ? <Tooltip>{m.category}</Tooltip> : null}
+                {m.category ? <Tooltip permanent className="kyc-category-tooltip">{m.category}</Tooltip> : null}
               </Marker>
             ))
           : (
             <Marker position={center} icon={pinIcon(label, FALLBACK_PIN)}>
-              {label ? <Tooltip>{label}</Tooltip> : null}
+              {label ? <Tooltip >{label}</Tooltip> : null}
             </Marker>
           )}
       </MapContainer>

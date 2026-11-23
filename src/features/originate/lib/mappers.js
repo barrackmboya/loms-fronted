@@ -405,8 +405,22 @@ export function mapKycReport(raw) {
       current: currentEmployment && {
         employer: dash(currentEmployment.employer_name),
         title: dash(currentEmployment.job_title),
+        employerPin: dash(currentEmployment.employer_pin),
+        employerAddress: dash(currentEmployment.employer_address),
         income: formatMoney(currentEmployment.monthly_income, currency),
         status: currentEmployment.employment_status ? prettify(currentEmployment.employment_status) : '—',
+        // Additional employer/business fields for decisioning
+        employeeId: dash(currentEmployment.employee_id),
+        employmentType: dash(currentEmployment.employment_type),
+        yearsAtEmployer: dash(currentEmployment.years_at_employer),
+        industrySector: dash(currentEmployment.industry_sector),
+        salaryPaymentMethod: dash(currentEmployment.salary_payment_method),
+        nssfNumber: dash(currentEmployment.nssf_number),
+        nhifNumber: dash(currentEmployment.nhif_number),
+        employerRegistrationNumber: dash(currentEmployment.employer_registration_number),
+        employerSize: dash(currentEmployment.employer_size),
+        employerPhone: dash(currentEmployment.employer_phone),
+        employerEmail: dash(currentEmployment.employer_email),
       },
       history: {
         position: dash(knownHistory.position),

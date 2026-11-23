@@ -1,11 +1,21 @@
 import { money, pct } from './lib/format'
 
-export function Kpi({ label, value, note }) {
+/**
+ * KPI tile. Defaults to the original flat `.panel` card so existing views
+ * (Portfolio, Metrics) keep their look; `variant="neu"` opts into the
+ * neumorphic soft-UI tile used by the Dashboard.
+ *
+ * `tag` renders a small colour-coded chip above the label (risk bands).
+ * `noteTone` is a semantic 'good' / 'bad' accent, never colour alone — the
+ * note text always carries the direction arrow and the label.
+ */
+export function Kpi({ label, value, note, noteTone = '', variant = 'panel', tag, tagTone = '' }) {
   return (
-    <div className="panel kpi">
-      <small>{label}</small>
+    <div className={`${variant === 'neu' ? 'neu' : 'panel'} kpi`}>
+      {tag && <span className={`kpi-tag ${tagTone}`}>{tag}</span>}
+      <small className="kpi-label">{label}</small>
       <b>{value}</b>
-      {note && <small>{note}</small>}
+      {note && <small className={`kpi-note ${noteTone}`}>{note}</small>}
     </div>
   )
 }
@@ -14,9 +24,9 @@ export function Tag({ tone, children }) {
   return <span className={`tag ${tone}`}>{children}</span>
 }
 
-export function Meter({ value, tone = '' }) {
+export function Meter({ value, tone = '', neu = false }) {
   return (
-    <div className={`bar ${tone}`}>
+    <div className={`bar ${tone}${neu ? ' neu-track' : ''}`}>
       <i style={{ width: `${Math.min(Math.max(value * 100, 1), 100)}%` }} />
     </div>
   )

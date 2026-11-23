@@ -36,9 +36,33 @@
 
   --s1: 6px; --s2: 12px; --s3: 18px; --s4: 26px;
 
+  /* Neumorphism (soft-UI). One shadow system shared by raised and inset
+     surfaces; the base tone is --paper so depth comes from light alone.
+     Light source: top-left (light shadow), cast shadow: bottom-right. */
+  --neu-shadow-dark: rgba(13, 31, 28, 0.14);
+  --neu-shadow-light: #ffffff;
+  --neu-raised: 10px 10px 20px var(--neu-shadow-dark), -10px -10px 20px var(--neu-shadow-light);
+  --neu-inset: inset 6px 6px 14px var(--neu-shadow-dark), inset -6px -6px 14px var(--neu-shadow-light);
+  --neu-pressed: inset 4px 4px 10px var(--neu-shadow-dark), inset -4px -4px 10px var(--neu-shadow-light);
+  --neu-radius: 18px;
+
   /* KPI big-number font: scales with the viewport, floored so long figures
      never spill their card, capped so they stay large on wide screens. */
   --kpi-value: clamp(13px, 3.5vw, 27px);
+}
+
+/* Opt-in dark theme (set data-theme="dark" on <html>). The app stays on the
+   light neumorphic palette unless a theme toggle explicitly asks for dark. */
+:root[data-theme='dark'] {
+  --ink: #e7ece8;
+  --ink-soft: #9db3ac;
+  --paper: #121815;
+  --panel: #1a231f;
+  --line: #2d3a34;
+  --muted: #8a968f;
+  --neu-shadow-dark: rgba(0, 0, 0, 0.55);
+  --neu-shadow-light: rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -107,6 +131,23 @@ main { flex: 1; min-height: 0; overflow-y: auto; width: 98vw; max-width: 1600px;
   border-radius: 10px; padding: 10px 12px; background: #eaefea;
   box-shadow: inset 3px 3px 7px #d2d9d3, inset -3px -3px 7px #ffffff;
 }
+
+/* ---------- neumorphic surfaces (soft-UI) ---------- */
+/* Raised: same tone as the page, no outline. Inset: pressed / recessed.
+   Flat: a clear plotting/reading surface nested inside a raised panel. */
+.neu {
+  background: var(--paper);
+  border: 0;
+  border-radius: var(--neu-radius);
+  box-shadow: var(--neu-raised);
+}
+.neu.inset { box-shadow: var(--neu-inset); }
+.neu.flat {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: none;
+}
 .panel h2, .soft h2 { font: 600 15px var(--sans); margin-bottom: var(--s2); }
 .eyebrow { color: var(--ink-soft); 
   font-size: 12px; font-weight: 600; margin: var(--s3) 0 var(--s1); }
@@ -151,6 +192,13 @@ tr:last-child td { border-bottom: 0; }
 .bar { height: 9px; background: #e1e6e2; }
 .bar > i { display: block; height: 100%; background: var(--teal); }
 .bar.warn > i { background: var(--warn); } .bar.bad > i { background: var(--bad); }
+.bar.ok > i { background: var(--ok); } .bar.orange > i { background: #b5651d; }
+/* Recessed track for bars sitting on a neumorphic surface. */
+.bar.neu-track {
+  height: 8px; border-radius: 999px; background: var(--paper);
+  box-shadow: var(--neu-pressed); overflow: hidden;
+}
+.bar.neu-track > i { border-radius: 999px; }
 
 .gate { display: flex; justify-content: space-between; align-items: center; gap: 10px;
   padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
